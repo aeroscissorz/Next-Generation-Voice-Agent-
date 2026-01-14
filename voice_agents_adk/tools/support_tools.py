@@ -1,17 +1,28 @@
-from voice_agents_adk.tools.data_store import load_data
+import os
+from supabase import create_client
+
+supabase = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY"),
+)
 
 def get_open_tickets(user_id: str):
-    data = load_data()
-    return [
-        ticket
-        for ticket in data["support"]["tickets"]
-        if ticket["user_id"] == user_id and ticket["status"] == "open"
-    ]
+    res = (
+        supabase
+        .table("support_tickets")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("status", "open")
+        .execute()
+    )
+    return res.data or []
 
 def check_outage(area: str):
-    data = load_data()
-    return [
-        outage
-        for outage in data["support"]["outages"]
-        if outage["area"].lower() == area.lower()
-    ]
+    res = (
+        supabase
+        .table("outages")
+        .select("*")
+        .eq("area", area)
+        .execute()
+    )
+    return res.data or []
