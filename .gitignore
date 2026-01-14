@@ -218,3 +218,10 @@ __marimo__/
 .adk/
 *.db
 demo_voice/
+.venv/
+.adk/
+*.db
+__pycache__/
+tempCodeRunnerFile.py
+voice_agents_adk/data/*.index
+voice_agents_adk/data/*.json

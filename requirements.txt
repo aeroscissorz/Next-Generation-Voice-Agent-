@@ -1,3 +1,7 @@
 google-adk
 google-generativeai
 python-dotenv
+faiss-cpu
+sentence-transformers
+langchain-text-splitters
+supabase

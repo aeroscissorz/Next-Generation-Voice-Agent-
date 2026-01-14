@@ -1,0 +1,43 @@
+REFUND POLICY
+Refunds are applicable only when a verified service outage lasts longer than 24 consecutive hours.
+Short disruptions, intermittent connectivity issues, or slow speeds do not qualify for refunds.
+Refunds are processed as billing credits and reflected in the next billing cycle.
+
+OUTAGE POLICY
+Planned maintenance outages are communicated in advance and are not eligible for refunds.
+Unplanned outages are tracked by region and time.
+Only outages confirmed by the network operations team are considered valid for compensation.
+
+ROUTER & EQUIPMENT POLICY
+Router disconnections caused by customer-owned devices are not eligible for compensation.
+If the router provided by the company is found to be faulty, a free replacement will be issued.
+Router issues alone do not qualify for billing refunds.
+
+MONTHLY BILLING POLICY
+Monthly charges are applied for all active subscription plans regardless of usage.
+Billing cycles begin on the 1st of every month.
+Suspending a service mid-cycle does not pause billing unless officially requested and approved.
+
+PAYMENT METHODS POLICY
+Customers may add up to three payment methods.
+Supported payment methods include Credit Cards, Debit Cards, and UPI.
+Failed payments may result in temporary service suspension after a grace period of 7 days.
+
+COMPENSATION POLICY
+Compensation requests must be raised within 7 days of outage resolution.
+Compensation decisions are final and based on system-verified data.
+Customer support agents cannot manually override compensation outcomes.
+
+SERVICE PLAN POLICY
+Plan upgrades take effect immediately.
+Plan downgrades apply from the next billing cycle.
+Promotional plans are non-refundable and non-transferable.
+
+SUPPORT TICKET POLICY
+Support tickets are prioritized based on severity and region.
+Open tickets must be resolved before raising compensation requests.
+Duplicate tickets for the same issue may be auto-closed.
+
+DATA ACCURACY POLICY
+All decisions are based on system-logged data.
+Customer-reported issues without system evidence may not be eligible for action.
