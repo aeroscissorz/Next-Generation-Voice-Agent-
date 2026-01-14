@@ -1,51 +1,50 @@
 import { useNavigate } from 'react-router-dom'
 import { Headphones, CreditCard } from 'lucide-react'
+import SpotlightCard from '../components/SpotlightCard'
+import DotGrid from '../components/DotGrid'
 
 function Home() {
     const navigate = useNavigate()
 
     return (
-        <div className="min-h-screen bg-black text-white">
+        <div className="min-h-screen bg-black text-white relative">
+            {/* DotGrid Background */}
+            <div className="fixed inset-0 w-full h-full">
+                <DotGrid
+                    dotSize={10}
+                    gap={15}
+                    baseColor="#1a1a1a"
+                    activeColor="#22c55e"
+                    proximity={120}
+                    shockRadius={250}
+                    shockStrength={5}
+                    resistance={750}
+                    returnDuration={1.5}
+                    className="w-full h-full"
+                />
+            </div>
+
+            {/* Multiple gradient layers for depth */}
+            <div className="fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-gradient-radial from-green-500/20 via-green-500/5 to-transparent blur-3xl pointer-events-none"></div>
+            <div className="fixed top-2/3 left-1/4 w-[600px] h-[600px] bg-gradient-radial from-emerald-500/15 to-transparent blur-3xl pointer-events-none"></div>
+            <div className="fixed top-1/2 right-1/4 w-[500px] h-[500px] bg-gradient-radial from-teal-500/10 to-transparent blur-3xl pointer-events-none"></div>
+
             {/* Navigation */}
-            <nav className="flex items-center justify-between px-8 py-5 border-b border-gray-800">
-                <div className="text-2xl font-bold">NextGen Voice</div>
+            <nav className="relative z-10 flex items-center justify-center px-8 py-8">
+                <div className="flex items-center justify-between w-full max-w-4xl px-8 py-4 rounded-full border border-gray-800 bg-gray-900/50 backdrop-blur-sm">
+                    <div className="flex items-center gap-2">
+                        <div className="text-xl font-bold">NextGen Voice</div>
+                    </div>
 
-                <div className="hidden md:flex items-center gap-8 text-sm">
-                    <a href="#" className="hover:text-gray-300 transition">Features</a>
-                    <a href="#" className="hover:text-gray-300 transition">Demo</a>
-                    <a href="#" className="hover:text-gray-300 transition">Documentation</a>
-                    <a href="#" className="hover:text-gray-300 transition">About</a>
-                </div>
-
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={() => navigate('/login')}
-                        className="px-5 py-2 text-sm font-medium hover:text-gray-300 transition"
-                    >
-                        Login
-                    </button>
-                    <button
-                        onClick={() => navigate('/login')}
-                        className="px-5 py-2 text-sm font-medium bg-green-500 hover:bg-green-600 rounded-full transition"
-                    >
-                        Register
-                    </button>
+                    <div className="flex items-center gap-8 text-sm">
+                        <a href="#features" className="hover:text-green-500 transition">Features</a>
+                        <a href="#about" className="hover:text-green-500 transition">About</a>
+                    </div>
                 </div>
             </nav>
 
             {/* Hero Section */}
-            <main className="relative overflow-hidden min-h-screen">
-                {/* Multiple gradient layers for depth */}
-                <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-gradient-radial from-green-500/20 via-green-500/5 to-transparent blur-3xl -z-10"></div>
-                <div className="absolute top-2/3 left-1/4 w-[600px] h-[600px] bg-gradient-radial from-emerald-500/15 to-transparent blur-3xl -z-10"></div>
-                <div className="absolute top-1/2 right-1/4 w-[500px] h-[500px] bg-gradient-radial from-teal-500/10 to-transparent blur-3xl -z-10"></div>
-
-                {/* Enhanced dot pattern with varying opacity */}
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[length:20px_20px] -z-10"></div>
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.03)_1px,transparent_1px)] bg-[length:40px_40px] -z-10"></div>
-
-                {/* Grid lines for futuristic effect */}
-                <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[length:100px_100px] -z-10"></div>
+            <main className="relative z-10 overflow-hidden min-h-screen">
 
                 <div className="max-w-6xl mx-auto px-8 py-20 text-center relative z-10">
                     <div className="mb-6">
@@ -67,29 +66,35 @@ function Home() {
                         </button>
                         <button
                             onClick={() => navigate('/login')}
-                            className="px-6 py-3 text-sm font-medium bg-green-500 hover:bg-green-600 rounded-full transition shadow-lg shadow-green-500/20"
+                            className="px-6 py-3 text-sm font-medium bg-green-500 hover:bg-green-600 rounded-full transition shadow-lg shadow-green-500/20 cursor-pointer"
                         >
-                            Try it now
+                            Login
                         </button>
                     </div>
 
                     {/* Feature Cards */}
                     <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto mt-16">
-                        <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 rounded-lg p-8 text-left hover:border-green-500/50 transition">
+                        <SpotlightCard
+                            className="text-left hover:border-green-500/50 transition"
+                            spotlightColor="rgba(34, 197, 94, 0.3)"
+                        >
                             <Headphones className="text-green-500 w-10 h-10 mb-4" />
                             <h3 className="text-xl font-semibold mb-3">Support Agent</h3>
                             <p className="text-gray-400 text-sm">
                                 Handle customer inquiries, troubleshoot issues, and provide instant support with natural voice interactions.
                             </p>
-                        </div>
+                        </SpotlightCard>
 
-                        <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 rounded-lg p-8 text-left hover:border-green-500/50 transition">
+                        <SpotlightCard
+                            className="text-left hover:border-green-500/50 transition"
+                            spotlightColor="rgba(34, 197, 94, 0.3)"
+                        >
                             <CreditCard className="text-green-500 w-10 h-10 mb-4" />
                             <h3 className="text-xl font-semibold mb-3">Billing Agent</h3>
                             <p className="text-gray-400 text-sm">
                                 Process payments, check account balances, and manage billing inquiries through conversational AI.
                             </p>
-                        </div>
+                        </SpotlightCard>
                     </div>
                 </div>
             </main>
