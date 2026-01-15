@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Mail, Lock, ArrowLeft, CheckCircle, XCircle } from 'lucide-react'
+import { Mail, Lock, CheckCircle, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import DotGrid from '../components/DotGrid'
 
 function Login() {
     const navigate = useNavigate()
@@ -36,7 +37,7 @@ function Login() {
                     setMessage({ type: 'success', text: 'Login successful! Welcome back.' })
                     // Store user info in localStorage
                     localStorage.setItem('user', JSON.stringify({ email: data.email_address, name: data.name }))
-                    setTimeout(() => navigate('/'), 1500)
+                    setTimeout(() => navigate('/dashboard'), 1500)
                 }
             } else {
                 // Register logic
@@ -91,27 +92,48 @@ function Login() {
 
     return (
         <div className="min-h-screen bg-black text-white">
-            {/* Navigation */}
-            <nav className="flex items-center justify-between px-8 py-5 border-b border-gray-800">
-                <div className="text-2xl font-bold">NextGen Voice</div>
-                <button
-                    onClick={() => navigate('/')}
-                    className="flex items-center gap-2 px-4 py-2 text-sm hover:text-gray-300 transition"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                    Back to Home
-                </button>
+            {/* Navigation - Same as Homepage */}
+            <nav className="relative z-10 flex items-center justify-center px-8 py-8">
+                <div className="flex items-center justify-between w-full max-w-4xl px-8 py-4 rounded-full border border-gray-800 bg-gray-900/50 backdrop-blur-sm">
+                    <div className="flex items-center gap-2">
+                        <div className="text-xl font-bold">NextGen Voice</div>
+                    </div>
+
+                    <div className="flex items-center gap-8 text-sm">
+                        <a href="#features" className="hover:text-green-500 transition">Features</a>
+                        <a href="#about" className="hover:text-green-500 transition">About</a>
+                        <button
+                            onClick={() => navigate('/')}
+                            className="px-4 py-2 text-sm font-medium border border-gray-700 hover:border-gray-500 rounded-full transition"
+                        >
+                            Back to Home
+                        </button>
+                    </div>
+                </div>
             </nav>
 
             {/* Login Form */}
             <main className="relative overflow-hidden min-h-screen flex items-center justify-center">
-                {/* Background effects */}
-                <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-gradient-radial from-green-500/20 via-green-500/5 to-transparent blur-3xl -z-10"></div>
-                <div className="absolute top-2/3 left-1/4 w-[600px] h-[600px] bg-gradient-radial from-emerald-500/15 to-transparent blur-3xl -z-10"></div>
-                <div className="absolute top-1/2 right-1/4 w-[500px] h-[500px] bg-gradient-radial from-teal-500/10 to-transparent blur-3xl -z-10"></div>
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[length:20px_20px] -z-10"></div>
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.03)_1px,transparent_1px)] bg-[length:40px_40px] -z-10"></div>
-                <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[length:100px_100px] -z-10"></div>
+                {/* DotGrid Background - Same as Homepage */}
+                <div className="fixed inset-0 w-full h-full">
+                    <DotGrid
+                        dotSize={10}
+                        gap={15}
+                        baseColor="#1a1a1a"
+                        activeColor="#22c55e"
+                        proximity={120}
+                        shockRadius={250}
+                        shockStrength={5}
+                        resistance={750}
+                        returnDuration={1.5}
+                        className="w-full h-full"
+                    />
+                </div>
+
+                {/* Multiple gradient layers for depth */}
+                <div className="fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-gradient-radial from-green-500/20 via-green-500/5 to-transparent blur-3xl pointer-events-none"></div>
+                <div className="fixed top-2/3 left-1/4 w-[600px] h-[600px] bg-gradient-radial from-emerald-500/15 to-transparent blur-3xl pointer-events-none"></div>
+                <div className="fixed top-1/2 right-1/4 w-[500px] h-[500px] bg-gradient-radial from-teal-500/10 to-transparent blur-3xl pointer-events-none"></div>
 
                 <div className="w-full max-w-md px-8 relative z-10">
                     <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 rounded-2xl p-8">
