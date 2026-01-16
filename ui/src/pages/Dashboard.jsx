@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MessageSquare, Archive, Library, Headphones, CreditCard, Mic, Paperclip, Settings as SettingsIcon, Send, Plus, Download, LogOut, Sparkles, DollarSign, Menu, X } from 'lucide-react'
 import SplitText from '../components/SplitText'
 import Aurora from '../components/Aurora'
+import { Orb } from '../components/ui/orb'
 
 function Dashboard() {
     const navigate = useNavigate()
@@ -15,6 +16,9 @@ function Dashboard() {
         { id: 3, title: 'Technical Support - Login Issue', date: '2 days ago' },
         { id: 4, title: 'Payment Method Update', date: '3 days ago' },
     ])
+
+    // Create a ref for dynamic orb colors that match Aurora theme
+    const orbColorsRef = useRef(["#FF6B6B", "#4ECDC4"]);
 
     useEffect(() => {
         // Get user data from localStorage
@@ -137,16 +141,13 @@ function Dashboard() {
 
                 {/* Center Content - Orb */}
                 <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
-                    {/* Animated Orb */}
-                    <div className="relative mb-8">
-                        {/* Main orb */}
-                        <div className="w-40 h-40 rounded-full bg-gradient-to-br from-green-400 via-emerald-500 to-teal-500 animate-pulse shadow-2xl shadow-green-500/50 relative overflow-hidden">
-                            {/* Inner glow effect */}
-                            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-white/20 to-transparent"></div>
-                        </div>
-                        {/* Outer glow layers */}
-                        <div className="absolute inset-0 w-40 h-40 rounded-full bg-gradient-to-br from-green-400 via-emerald-500 to-teal-500 blur-2xl opacity-60 animate-pulse"></div>
-                        <div className="absolute inset-[-20px] rounded-full bg-gradient-to-br from-green-500/30 via-emerald-500/30 to-teal-500/30 blur-3xl animate-pulse"></div>
+                    {/* ElevenLabs AI Orb - Colors match Aurora theme */}
+                    <div className="relative mb-8 w-25 h-25">
+                        <Orb
+                            colorsRef={orbColorsRef}
+                            agentState={null}
+                            className="w-full h-full"
+                        />
                     </div>
 
                     {/* Greeting with SplitText */}
