@@ -1,15 +1,57 @@
-import faiss, json, numpy as np
+from dotenv import load_dotenv
+from supabase import create_client
 from sentence_transformers import SentenceTransformer
-from pathlib import Path
+import os
+import threading
 
-INDEX_PATH = Path("voice_agents_adk/data/kb.index")
-CHUNKS_PATH = Path("voice_agents_adk/data/kb_chunks.json")
+load_dotenv()
 
-model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-index = faiss.read_index(str(INDEX_PATH))
-chunks = json.load(open(CHUNKS_PATH))
+supabase = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY"),
+)
+
+# Lazy-loaded embedding model
+_embedder = None
+_embedder_lock = threading.Lock()
+
+def get_embedder():
+    global _embedder
+    if _embedder is None:
+        with _embedder_lock:
+            if _embedder is None:  
+                print("🔄 Loading embedding model (first KB request)...")
+                _embedder = SentenceTransformer(
+                    "sentence-transformers/all-MiniLM-L6-v2"
+                )
+    return _embedder
+
 
 def search_company_knowledge(query: str, k: int = 3):
-    q_emb = model.encode([query])
-    _, I = index.search(np.array(q_emb), k)
-    return [chunks[i] for i in I[0]]
+    embedder = get_embedder() 
+
+    query_embedding = embedder.encode(query).tolist()
+
+    response = supabase.rpc(
+        "match_company_knowledge",
+        {
+            "query_embedding": query_embedding,
+            "match_count": k
+        }
+    ).execute()
+
+    print("DEBUG KB RESPONSE:", response.data)
+
+    if response.data:
+        return response.data
+
+    keyword = query.lower().replace("policy", "").strip()
+    fallback = (
+        supabase.table("company_knowledge")
+        .select("content")
+        .ilike("content", f"%{keyword}%")
+        .limit(k)
+        .execute()
+    )
+
+    return fallback.data or []
