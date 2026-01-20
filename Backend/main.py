@@ -1,6 +1,11 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+import os
+
+# Load environment variables first
+load_dotenv(override=True)
 
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
