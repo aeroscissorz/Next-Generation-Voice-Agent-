@@ -1,22 +1,20 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MessageSquare, Archive, Library, Headphones, CreditCard, Mic, Paperclip, Settings as SettingsIcon, Send, Plus, Download, LogOut, Sparkles, DollarSign, Menu, X } from 'lucide-react'
+import { MessageSquare, Headphones, Mic, Paperclip, Settings as SettingsIcon, Send, Download, LogOut, Sparkles } from 'lucide-react'
 import SplitText from '../components/SplitText'
 import Aurora from '../components/Aurora'
 import { Orb } from '../components/ui/orb'
+import { sendChatMessage } from '../api'
+import CustomScrollbar from '../components/CustomScrollbar'
+import Sidebar from '../components/Sidebar'
 
 function Dashboard() {
     const navigate = useNavigate()
     const [message, setMessage] = useState('')
     const [responses, setResponses] = useState([]);
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true)
     const [userName, setUserName] = useState('')
-    const [conversations, setConversations] = useState([
-        { id: 1, title: 'Billing Inquiry - Invoice #1234', date: '2 hours ago' },
-        { id: 2, title: 'Account Balance Check', date: 'Yesterday' },
-        { id: 3, title: 'Technical Support - Login Issue', date: '2 days ago' },
-        { id: 4, title: 'Payment Method Update', date: '3 days ago' },
-    ])
+    const [mode, setMode] = useState('chat') // 'chat' or 'voice'
+    const [isLoading, setIsLoading] = useState(false)
 
     // Create a ref for dynamic orb colors that match Aurora theme
     const orbColorsRef = useRef(["#FF6B6B", "#4ECDC4"]);
@@ -34,7 +32,7 @@ function Dashboard() {
         }
     }, [navigate])
     useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [responses]);
 
     const handleLogout = () => {
@@ -42,33 +40,43 @@ function Dashboard() {
         navigate('/')
     }
     const sendMessage = async () => {
-    console.log("SEND CLICKED:", message)
-    if (!message.trim()) return;
+        console.log("SEND CLICKED:", message)
+        if (!message.trim() || isLoading) return;
 
-    const user = JSON.parse(localStorage.getItem("user"));
-    console.log("SENDING TO BACKEND", import.meta.env.VITE_BACKEND_URL);
-    const res = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/chat`,
-        {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                message,
-                user_id: user.email
-            })
+        const user = JSON.parse(localStorage.getItem("user"));
+
+        try {
+            // Clear input and set loading
+            const currentMessage = message;
+            setMessage("");
+            setIsLoading(true);
+
+            // Send to backend using API module
+            const data = await sendChatMessage(currentMessage, user.email);
+
+            // Generate session ID (you can make this more sophisticated)
+            const sessionId = `session_${Date.now()}`;
+
+            // Navigate to chat session page with initial message and response
+            navigate(`/dashboard/${sessionId}`, {
+                state: {
+                    initialMessage: currentMessage,
+                    initialResponse: data.reply
+                }
+            });
+        } catch (error) {
+            console.error("Error sending message:", error);
+            // Show error in current page
+            setResponses(prev => [
+                ...prev,
+                { role: "user", text: message },
+                { role: "agent", text: "Sorry, there was an error processing your message. Please try again." }
+            ]);
+            setMessage("");
+        } finally {
+            setIsLoading(false);
         }
-    );
-
-    const data = await res.json();
-
-    setResponses(prev => [
-        ...prev,
-        { role: "user", text: message },
-        { role: "agent", text: data.reply }
-    ]);
-
-    setMessage("");
-};
+    };
 
 
     return (
@@ -84,150 +92,110 @@ function Dashboard() {
             </div>
 
             {/* Sidebar */}
-            <aside className={`${isSidebarOpen ? 'w-64' : 'w-16'} bg-gray-900/50 backdrop-blur-sm border-r border-gray-800 flex flex-col relative z-10 transition-all duration-300`}>
-                {/* Hamburger Icon */}
-                <div className="p-4 flex items-center justify-center border-b border-gray-800">
-                    <button
-                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                        className="p-2 hover:bg-gray-800 rounded-lg transition"
-                    >
-                        {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
-                    </button>
-                </div>
+            <Sidebar variant="dashboard" />
+            {/* Main Content */}
+            <main className="flex-1 flex flex-col relative z-10">
 
-                {/* New Chat Button */}
-                <div className="p-4">
-                    <button className={`w-full flex items-center ${isSidebarOpen ? 'gap-2 px-4' : 'justify-center px-0'} py-2.5 bg-green-500 hover:bg-green-600 rounded-lg transition text-sm font-medium shadow-lg shadow-green-500/20`}>
-                        <Plus size={18} />
-                        {isSidebarOpen && <span>New Conversation</span>}
-                    </button>
-                </div>
+                {/* ===== Top Bar ===== */}
+                <nav className="relative z-10 flex items-center justify-between px-8 py-6">
+                    <div className="text-xl font-bold">NextGen Voice</div>
 
-                {/* Features Section */}
-                <div className="px-4 pb-2">
-                    {isSidebarOpen && <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Features</p>}
-                    <nav className="space-y-1">
-                        <button className={`w-full flex items-center ${isSidebarOpen ? 'gap-3 px-3' : 'justify-center px-0'} py-2 hover:bg-gray-800 rounded-lg transition text-sm`} title="Chat Support">
-                            <MessageSquare size={18} className="text-green-500" />
-                            {isSidebarOpen && <span>Chat Support</span>}
+                    <div className="flex items-center gap-4">
+                        <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-700 hover:border-gray-500 rounded-full transition">
+                            <SettingsIcon size={16} />
+                            <span>Configuration</span>
                         </button>
-                        <button className={`w-full flex items-center ${isSidebarOpen ? 'gap-3 px-3' : 'justify-center px-0'} py-2 hover:bg-gray-800 rounded-lg transition text-sm`} title="Voice Support">
-                            <Headphones size={18} className="text-green-500" />
-                            {isSidebarOpen && <span>Voice Support</span>}
-                        </button>
-                        <button className={`w-full flex items-center ${isSidebarOpen ? 'gap-3 px-3' : 'justify-center px-0'} py-2 hover:bg-gray-800 rounded-lg transition text-sm`} title="Archived">
-                            <Archive size={18} className="text-green-500" />
-                            {isSidebarOpen && <span>Archived</span>}
-                        </button>
-                        <button className={`w-full flex items-center ${isSidebarOpen ? 'gap-3 px-3' : 'justify-center px-0'} py-2 hover:bg-gray-800 rounded-lg transition text-sm`} title="History">
-                            <Library size={18} className="text-green-500" />
-                            {isSidebarOpen && <span>History</span>}
-                        </button>
-                    </nav>
-                </div>
 
-                {/* Workspaces Section */}
-                {isSidebarOpen && (
-                    <div className="px-4 py-2 flex-1 overflow-y-auto">
-                        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Recent Conversations</p>
-                        <nav className="space-y-1">
-                            {conversations.map((conv) => (
-                                <button
-                                    key={conv.id}
-                                    className="w-full flex items-start gap-3 px-3 py-2 hover:bg-gray-800 rounded-lg transition text-sm text-left"
-                                >
-                                    <MessageSquare size={16} className="text-green-500 mt-0.5 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="truncate">{conv.title}</p>
-                                        <p className="text-xs text-gray-500">{conv.date}</p>
-                                    </div>
-                                </button>
-                            ))}
-                        </nav>
+                        <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-700 hover:border-gray-500 rounded-full transition">
+                            <Download size={16} />
+                            <span>Export</span>
+                        </button>
+
+                        <button
+                            onClick={handleLogout}
+                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50 rounded-full transition text-red-400"
+                        >
+                            <LogOut size={16} />
+                            <span>Logout</span>
+                        </button>
                     </div>
-                )}
-            </aside>
-                    {/* Main Content */}
-<main className="flex-1 flex flex-col relative z-10">
+                </nav>
 
-  {/* ===== Top Bar ===== */}
-  <nav className="relative z-10 flex items-center justify-between px-8 py-6">
-    <div className="text-xl font-bold">NextGen Voice</div>
+                {/* ===== Static Header (Orb + Greeting) ===== */}
+                <div className="flex flex-col items-center py-8">
+                    <div className="relative mb-6 w-25 h-25">
+                        <Orb
+                            colorsRef={orbColorsRef}
+                            agentState={null}
+                            className="w-full h-full"
+                        />
+                    </div>
 
-    <div className="flex items-center gap-4">
-      <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-700 hover:border-gray-500 rounded-full transition">
-        <SettingsIcon size={16} />
-        <span>Configuration</span>
-      </button>
+                    {userName && (
+                        <SplitText
+                            text={`Hi ${userName}!`}
+                            className="text-2xl font-normal text-gray-300"
+                            tag="p"
+                            delay={30}
+                            duration={1}
+                            splitType="chars"
+                            from={{ opacity: 0, y: 20 }}
+                            to={{ opacity: 1, y: 0 }}
+                        />
+                    )}
 
-      <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-700 hover:border-gray-500 rounded-full transition">
-        <Download size={16} />
-        <span>Export</span>
-      </button>
+                    <h2 className="text-3xl font-normal mt-2 text-white text-center">
+                        How can we help you today?
+                    </h2>
 
-      <button
-        onClick={handleLogout}
-        className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50 rounded-full transition text-red-400"
-      >
-        <LogOut size={16} />
-        <span>Logout</span>
-      </button>
-    </div>
-  </nav>
+                    {/* Mode Toggle */}
+                    <div className="mt-6 flex items-center gap-2 bg-gray-900/50 backdrop-blur-sm border border-gray-800 rounded-full p-1">
+                        <button
+                            onClick={() => setMode('chat')}
+                            className={`flex items-center gap-2 px-6 py-2.5 rounded-full transition-all duration-300 ${mode === 'chat'
+                                ? 'bg-green-500 text-black font-medium shadow-lg shadow-green-500/30'
+                                : 'text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            <MessageSquare size={18} />
+                            <span>Chat</span>
+                        </button>
+                        <button
+                            onClick={() => setMode('voice')}
+                            className={`flex items-center gap-2 px-6 py-2.5 rounded-full transition-all duration-300 ${mode === 'voice'
+                                ? 'bg-green-500 text-black font-medium shadow-lg shadow-green-500/30'
+                                : 'text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            <Headphones size={18} />
+                            <span>Voice</span>
+                        </button>
+                    </div>
+                </div>
 
-  {/* ===== Static Header (Orb + Greeting) ===== */}
-  <div className="flex flex-col items-center py-8">
-    <div className="relative mb-6 w-25 h-25">
-      <Orb
-        colorsRef={orbColorsRef}
-        agentState={null}
-        className="w-full h-full"
-      />
-    </div>
-
-    {userName && (
-      <SplitText
-        text={`Hi ${userName}!`}
-        className="text-2xl font-normal text-gray-300"
-        tag="p"
-        delay={30}
-        duration={1}
-        splitType="chars"
-        from={{ opacity: 0, y: 20 }}
-        to={{ opacity: 1, y: 0 }}
-      />
-    )}
-
-    <h2 className="text-3xl font-normal mt-2 text-white text-center">
-      How can we help you today?
-    </h2>
-  </div>
-
-  {/* ===== Scrollable Chat Area ===== */}
-  <div className="flex-1 overflow-y-auto px-6 py-4">
-    <div className="max-w-4xl mx-auto space-y-4">
-      {responses.map((msg, idx) => (
-        <div
-          key={idx}
-          className={`flex ${
-            msg.role === "user" ? "justify-end" : "justify-start"
-          }`}
-        >
-          <div
-            className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm
-            ${
-              msg.role === "user"
-                ? "bg-green-500 text-black rounded-br-none"
-                : "bg-white/10 text-white rounded-bl-none"
-            }`}
-          >
-            {msg.text}
-          </div>
-        </div>
-      ))}
-      <div ref={chatEndRef} />
-    </div>
-  </div>
+                {/* ===== Scrollable Chat Area ===== */}
+                <CustomScrollbar className="flex-1 px-6 py-4">
+                    <div className="max-w-4xl mx-auto space-y-4">
+                        {responses.map((msg, idx) => (
+                            <div
+                                key={idx}
+                                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"
+                                    }`}
+                            >
+                                <div
+                                    className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm
+            ${msg.role === "user"
+                                            ? "bg-green-500 text-black rounded-br-none"
+                                            : "bg-white/10 text-white rounded-bl-none"
+                                        }`}
+                                >
+                                    {msg.text}
+                                </div>
+                            </div>
+                        ))}
+                        <div ref={chatEndRef} />
+                    </div>
+                </CustomScrollbar>
 
                 {/* Bottom Input Area */}
                 <div className="px-6 pb-6">
@@ -242,15 +210,16 @@ function Dashboard() {
                                     <Sparkles size={16} />
                                 </div>
                                 <textarea value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => {                     // ✅ ADDED
-                                    if (e.key === "Enter" && !e.shiftKey) {
-                                    e.preventDefault();
-                                    sendMessage();
-                                }
-                            }}
-                            placeholder="Ask Anything..."
-                            className="flex-1 bg-transparent border-none outline-none resize-none text-base placeholder-gray-400 text-white"
-                            rows={3}
-                        />
+                                    if (e.key === "Enter" && !e.shiftKey && !isLoading) {
+                                        e.preventDefault();
+                                        sendMessage();
+                                    }
+                                }}
+                                    placeholder={isLoading ? "Waiting for response..." : "Ask Anything..."}
+                                    className="flex-1 bg-transparent border-none outline-none resize-none text-base placeholder-gray-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                    rows={3}
+                                    disabled={isLoading}
+                                />
 
                             </div>
 
@@ -272,11 +241,24 @@ function Dashboard() {
                                 </div>
 
                                 <div className="flex items-center gap-3">
-                                    <button className="w-11 h-11 flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-full transition" title="Voice Input">
+                                    <button
+                                        className="w-11 h-11 flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-full transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Voice Input"
+                                        disabled={isLoading}
+                                    >
                                         <Mic size={20} />
                                     </button>
-                                    <button   onClick={sendMessage}className="w-11 h-11 flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-full transition shadow-lg shadow-purple-500/30" title="Send Message"
-                                    ><Send size={20} />
+                                    <button
+                                        onClick={sendMessage}
+                                        className="w-11 h-11 flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-full transition shadow-lg shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Send Message"
+                                        disabled={isLoading}
+                                    >
+                                        {isLoading ? (
+                                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                        ) : (
+                                            <Send size={20} />
+                                        )}
                                     </button>
                                 </div>
                             </div>

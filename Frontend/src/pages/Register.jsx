@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Mail, Lock, User, CheckCircle, XCircle } from 'lucide-react'
-import { supabase } from '../lib/supabase'
 import DotGrid from '../components/DotGrid'
+import { registerUser } from '../api'
 
 function Register() {
     const navigate = useNavigate()
@@ -35,33 +35,11 @@ function Register() {
                 return
             }
 
-            // Check if user already exists
-            const { data: existingUser } = await supabase
-                .from('users_voice')
-                .select('email_address')
-                .eq('email_address', formData.email)
-                .single()
+            // Register using API module
+            const result = await registerUser(formData.email, formData.name, formData.password)
 
-            if (existingUser) {
-                setMessage({ type: 'error', text: 'Email already registered. Please login instead.' })
-                setLoading(false)
-                return
-            }
-
-            // Insert new user into voice_users schema
-            const { error } = await supabase
-                .from('users_voice')
-                .insert([
-                    {
-                        email_address: formData.email,
-                        name: formData.name,
-                        password: formData.password
-                    }
-                ])
-
-            if (error) {
-                console.error('Registration error:', error)
-                setMessage({ type: 'error', text: 'Registration failed. Please try again.' })
+            if (!result.success) {
+                setMessage({ type: 'error', text: result.error })
             } else {
                 setMessage({ type: 'success', text: 'Registration successful! Redirecting to login...' })
                 setTimeout(() => navigate('/login'), 2000)

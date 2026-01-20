@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Mail, Lock, CheckCircle, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import DotGrid from '../components/DotGrid'
+import { loginUser, registerUser } from '../api'
 
 function Login() {
     const navigate = useNavigate()
@@ -23,20 +24,15 @@ function Login() {
 
         try {
             if (isLogin) {
-                // Login logic
-                const { data, error } = await supabase
-                    .from('users_voice')
-                    .select('*')
-                    .eq('email_address', formData.email)
-                    .eq('password', formData.password)
-                    .single()
+                // Login logic using API module
+                const result = await loginUser(formData.email, formData.password)
 
-                if (error || !data) {
-                    setMessage({ type: 'error', text: 'Invalid email or password' })
+                if (!result.success) {
+                    setMessage({ type: 'error', text: result.error })
                 } else {
                     setMessage({ type: 'success', text: 'Login successful! Welcome back.' })
                     // Store user info in localStorage
-                    localStorage.setItem('user', JSON.stringify({ email: data.email_address, name: data.name }))
+                    localStorage.setItem('user', JSON.stringify(result.data))
                     setTimeout(() => navigate('/dashboard'), 1500)
                 }
             } else {
@@ -47,33 +43,14 @@ function Login() {
                     return
                 }
 
-                // Check if user already exists
-                const { data: existingUser } = await supabase
-                    .from('users_voice')
-                    .select('email_address')
-                    .eq('email_address', formData.email)
-                    .single()
+                // Register using API module
+                const result = await registerUser(formData.email, formData.name, formData.password)
 
-                if (existingUser) {
-                    setMessage({ type: 'error', text: 'Email already registered' })
+                if (!result.success) {
+                    setMessage({ type: 'error', text: result.error })
                 } else {
-                    // Insert new user
-                    const { error } = await supabase
-                        .from('users_voice')
-                        .insert([
-                            {
-                                email_address: formData.email,
-                                name: formData.name,
-                                password: formData.password
-                            }
-                        ])
-
-                    if (error) {
-                        setMessage({ type: 'error', text: 'Registration failed. Please try again.' })
-                    } else {
-                        setMessage({ type: 'success', text: 'Registration successful! You can now login.' })
-                        setTimeout(() => setIsLogin(true), 1500)
-                    }
+                    setMessage({ type: 'success', text: 'Registration successful! You can now login.' })
+                    setTimeout(() => setIsLogin(true), 1500)
                 }
             }
         } catch {
