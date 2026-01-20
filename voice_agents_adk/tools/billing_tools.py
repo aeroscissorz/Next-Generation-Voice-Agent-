@@ -1,12 +1,23 @@
 import os
 from supabase import create_client
+from dotenv import load_dotenv
 
-supabase = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_SERVICE_KEY"),
-)
+load_dotenv(override=True)
+
+_supabase = None
+
+def get_supabase():
+    global _supabase
+    if _supabase is None:
+        _supabase = create_client(
+            os.getenv("SUPABASE_URL"),
+            os.getenv("SUPABASE_SERVICE_KEY"),
+        )
+    return _supabase
+
 
 def get_user_invoices(user_id: str):
+    supabase = get_supabase()
     res = (
         supabase
         .table("invoices")
@@ -16,7 +27,9 @@ def get_user_invoices(user_id: str):
     )
     return res.data or []
 
+
 def get_payment_methods(user_id: str):
+    supabase = get_supabase()
     res = (
         supabase
         .table("payment_methods")

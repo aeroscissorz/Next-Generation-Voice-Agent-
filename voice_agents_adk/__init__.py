@@ -1,5 +1,4 @@
 """Marketing Agents SDK - Voice-enabled multi-agent routing system."""
-
 from voice_agents_adk.agent import (
     root_agent,
     support_agent,

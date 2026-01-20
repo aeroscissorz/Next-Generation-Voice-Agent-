@@ -4,7 +4,7 @@ from sentence_transformers import SentenceTransformer
 from supabase import create_client
 from pathlib import Path
 import os
-load_dotenv()
+load_dotenv(override=True)
 BASE = Path(__file__).parent.parent
 RAW_DOC = BASE / "data" / "raw_policy.txt"
 

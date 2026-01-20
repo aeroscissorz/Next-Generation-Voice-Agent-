@@ -20,7 +20,7 @@ def get_embedder():
     if _embedder is None:
         with _embedder_lock:
             if _embedder is None:  
-                print("🔄 Loading embedding model (first KB request)...")
+                print("Loading embedding model (first KB request)...")
                 _embedder = SentenceTransformer(
                     "sentence-transformers/all-MiniLM-L6-v2"
                 )
