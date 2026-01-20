@@ -6,7 +6,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from voice_agents_adk.agent import root_agent
+from agent import root_agent
 
 app = FastAPI()
 
@@ -22,7 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-APP_NAME = "voice_agents_adk"
+APP_NAME = "Backend"
 
 session_service = InMemorySessionService()
 

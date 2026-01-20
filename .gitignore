@@ -223,5 +223,5 @@ demo_voice/
 *.db
 __pycache__/
 tempCodeRunnerFile.py
-voice_agents_adk/data/*.index
-voice_agents_adk/data/*.json
+Backend/data/*.index
+Backend/data/*.json
