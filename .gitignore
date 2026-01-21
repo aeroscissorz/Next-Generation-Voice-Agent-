@@ -14,8 +14,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -223,5 +221,5 @@ demo_voice/
 *.db
 __pycache__/
 tempCodeRunnerFile.py
-voice_agents_adk/data/*.index
-voice_agents_adk/data/*.json
+Backend/data/*.index
+Backend/data/*.json

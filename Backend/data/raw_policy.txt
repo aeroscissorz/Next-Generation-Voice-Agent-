@@ -1,7 +1,8 @@
-REFUND POLICY
-Refunds are applicable only when a verified service outage lasts longer than 24 consecutive hours.
-Short disruptions, intermittent connectivity issues, or slow speeds do not qualify for refunds.
-Refunds are processed as billing credits and reflected in the next billing cycle.
+Refund Policy:
+Customers are eligible for a prorated refund if service downtime
+exceeds 24 hours. Refunds are issued as bill credits in the next
+billing cycle and are subject to verification.
+
 
 OUTAGE POLICY
 Planned maintenance outages are communicated in advance and are not eligible for refunds.

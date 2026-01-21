@@ -2,28 +2,28 @@ import os
 from dotenv import load_dotenv
 from google.adk.agents import LlmAgent
 
-from voice_agents_adk.instructions import (
+from instructions import (
     ROOT_INSTRUCTION,
     SUPPORT_INSTRUCTION,
     BILLING_INSTRUCTION,
 )
 
-from voice_agents_adk.tools.billing_tools import (
+from tools.billing_tools import (
     get_user_invoices,
     get_payment_methods,
 )
 
-from voice_agents_adk.tools.memory_tools import (
+from tools.memory_tools import (
     get_user_memory,
     update_user_memory,
 )
 
-from voice_agents_adk.tools.support_tools import (
+from tools.support_tools import (
     get_open_tickets,
     check_outage,
 )
 
-from voice_agents_adk.tools.knowledge_tools import search_company_knowledge
+from tools.knowledge_tools import search_company_knowledge
 
 
 load_dotenv()
