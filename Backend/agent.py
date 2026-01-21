@@ -11,6 +11,13 @@ from instructions import (
 from tools.billing_tools import (
     get_user_invoices,
     get_payment_methods,
+    get_user_invoices_breakdown,
+    check_roaming_status,
+    check_roaming_status_monthwise,
+    update_roaming_status_monthwise,
+    check_wallet_amount_settlement,
+    update_wallet_amount,
+    create_wallet_entry,
 )
 
 from tools.memory_tools import (
@@ -42,7 +49,15 @@ billing_agent = LlmAgent(
     name="Billing_Agent",
     model=MODEL_NAME,
     instruction=BILLING_INSTRUCTION,
-    tools=[get_user_invoices, get_payment_methods, search_company_knowledge, get_user_memory, update_user_memory],
+    tools=[get_user_invoices, get_payment_methods, search_company_knowledge, get_user_memory, update_user_memory,get_user_invoices_breakdown,
+    check_roaming_status,
+    check_roaming_status_monthwise,
+    update_roaming_status_monthwise,
+   # get_wallet_amount_Not_Settled,
+   # get_wallet_amount_Already_Settled,
+   check_wallet_amount_settlement,
+    update_wallet_amount,
+    create_wallet_entry],
 
 )
 
