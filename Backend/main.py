@@ -18,13 +18,11 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=["*"],  # Allow all origins for development
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 APP_NAME = "Backend"
@@ -46,6 +44,11 @@ class ChatRequest(BaseModel):
 @app.get("/")
 def health():
     return {"status": "ok"}
+
+@app.options("/chat")
+async def chat_options():
+    return {"status": "ok"}
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     session_id = f"{req.user_id}-default"
@@ -62,9 +65,9 @@ async def chat(req: ChatRequest):
             session_id=session_id,
             new_message=content,
         ):
-            if event.is_final_response() and event.content:
+            if event.is_final_response() and event.content and event.content.parts:
                 final_text = event.content.parts[0].text
-        return final_text
+        return final_text if final_text else "I'm here to help! How can I assist you today?"
 
     try:
         reply = await run_agent()

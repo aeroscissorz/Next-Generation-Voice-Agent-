@@ -1,8 +1,9 @@
 import { useNavigate } from 'react-router-dom'
 import { useEffect } from 'react'
-import { MessageSquare, Archive, Library, Headphones, Plus, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { MessageSquare, Archive, Library, Headphones, Plus, Menu, X, ChevronLeft, ChevronRight, SkipBackIcon, LucideSkipBack, PresentationIcon, SendToBack, LayoutDashboardIcon } from 'lucide-react'
 import { useSidebar } from '../context/SidebarContext'
 import CustomScrollbar from './CustomScrollbar'
+import { BackSide } from 'three'
 
 /**
  * Sidebar Component
@@ -56,8 +57,8 @@ function Sidebar({ collapsed = false, variant = 'dashboard' }) {
                     className={`w-full flex items-center ${isSidebarOpen ? 'gap-2 px-4' : 'justify-center px-0'} py-2.5 bg-green-500 hover:bg-green-600 rounded-lg transition text-sm font-medium shadow-lg shadow-green-500/20`}
                     title="New Conversation"
                 >
-                    <Plus size={18} />
-                    {isSidebarOpen && <span>New Conversation</span>}
+                    <LayoutDashboardIcon size={18} />
+                    {isSidebarOpen && <span>Go to Dashboard</span>}
                 </button>
             </div>
 
