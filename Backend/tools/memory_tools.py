@@ -17,27 +17,35 @@ def get_supabase():
 
 
 def get_user_memory(user_id: str):
-    supabase = get_supabase()
-    response = (
-        supabase
-        .table("user_memory")
-        .select("key, value")
-        .eq("user_id", user_id)
-        .execute()
-    )
+    try:
+        supabase = get_supabase()
+        response = (
+            supabase
+            .table("user_memory")
+            .select("key, value")
+            .eq("user_id", user_id)
+            .execute()
+        )
 
-    if not response.data:
+        if not response.data:
+            return {}
+
+        return {item["key"]: item["value"] for item in response.data}
+    except Exception as e:
+        print(f"Error getting user memory: {e}")
         return {}
-
-    return {item["key"]: item["value"] for item in response.data}
 
 
 def update_user_memory(user_id: str, key: str, value: str):
-    supabase = get_supabase()
-    supabase.table("user_memory").upsert({
-        "user_id": user_id,
-        "key": key,
-        "value": value,
-    }).execute()
+    try:
+        supabase = get_supabase()
+        supabase.table("user_memory").upsert({
+            "user_id": user_id,
+            "key": key,
+            "value": value,
+        }).execute()
 
-    return {"status": "saved", "key": key, "value": value}
+        return {"status": "saved", "key": key, "value": value}
+    except Exception as e:
+        print(f"Error updating user memory: {e}")
+        return {"status": "error", "error": str(e)}

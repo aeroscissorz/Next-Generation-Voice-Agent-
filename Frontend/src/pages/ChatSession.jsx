@@ -1,31 +1,32 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { Settings as SettingsIcon, Send, Download, LogOut, Mic } from 'lucide-react'
+import { Settings as SettingsIcon, Send, Download, LogOut } from 'lucide-react'
 import Aurora from '../components/Aurora'
 import { Orb } from '../components/ui/orb'
-import { sendChatMessage } from '../api'
+import { sendChatMessage } from '../api/chatApi'
 import CustomScrollbar from '../components/CustomScrollbar'
 import Sidebar from '../components/Sidebar'
+import VoiceInterface from '../components/VoiceInterface'
 
 function ChatSession() {
     const navigate = useNavigate()
     const location = useLocation()
-    const { sessionId } = useParams()
     const [message, setMessage] = useState('')
     const [responses, setResponses] = useState([])
-    const [userName, setUserName] = useState('')
     const [isLoading, setIsLoading] = useState(false)
+    const [mode, setMode] = useState(location.state?.mode || 'chat') // Get mode from navigation state
     const chatEndRef = useRef(null)
     const orbColorsRef = useRef(["#FF6B6B", "#4ECDC4"])
+
+    // Determine orb size based on mode
+    const orbSize = mode === 'voice' || mode === 'telephonic' ? 'w-20 h-20' : 'w-12 h-12'
 
     useEffect(() => {
         // Get user data from localStorage
         const userData = localStorage.getItem('user')
-        if (userData) {
-            const user = JSON.parse(userData)
-            setUserName(user.name || 'Guest')
-        } else {
+        if (!userData) {
             navigate('/login')
+            return
         }
 
         // Get initial message from location state
@@ -127,103 +128,128 @@ function ChatSession() {
                     </div>
                 </nav>
 
-                {/* Compact Header with Small Orb */}
-                <div className="flex items-center justify-center py-4">
-                    <div className="relative w-12 h-12 mr-3">
-                        <Orb
-                            colorsRef={orbColorsRef}
-                            agentState={null}
-                            className="w-full h-full"
-                        />
+                {/* Compact Header with Small Orb - Only show in chat mode */}
+                {mode === 'chat' && (
+                    <div className="flex items-center justify-center py-4">
+                        <div className={`relative ${orbSize} mr-3 transition-all duration-300`}>
+                            <Orb
+                                colorsRef={orbColorsRef}
+                                agentState={null}
+                                className="w-full h-full"
+                            />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-400">Chatting with</p>
+                            <h2 className="text-lg font-medium text-white">NextGen AI Assistant</h2>
+                        </div>
                     </div>
-                    <div>
-                        <p className="text-sm text-gray-400">Chatting with</p>
-                        <h2 className="text-lg font-medium text-white">NextGen AI Assistant</h2>
-                    </div>
-                </div>
+                )}
 
-                {/* Scrollable Chat Area */}
-                <CustomScrollbar className="flex-1 px-6 py-4">
-                    <div className="max-w-4xl mx-auto space-y-4">
-                        {responses.map((msg, idx) => (
-                            <div
-                                key={idx}
-                                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"
-                                    }`}
-                            >
+                {/* Scrollable Chat Area - Only show in chat mode */}
+                {mode === 'chat' && (
+                    <CustomScrollbar className="flex-1 px-6 py-4">
+                        <div className="max-w-4xl mx-auto space-y-4">
+                            {responses.map((msg, idx) => (
                                 <div
-                                    className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm
-                                    ${msg.role === "user"
-                                            ? "bg-green-500 text-black rounded-br-none"
-                                            : "bg-white/10 text-white rounded-bl-none"
+                                    key={idx}
+                                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"
                                         }`}
                                 >
-                                    {msg.text}
+                                    <div
+                                        className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm
+                                    ${msg.role === "user"
+                                                ? "bg-green-500 text-black rounded-br-none"
+                                                : "bg-white/10 text-white rounded-bl-none"
+                                            }`}
+                                    >
+                                        {msg.text}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
-                        {isLoading && (
-                            <div className="flex justify-start">
-                                <div className="max-w-[70%] px-4 py-3 rounded-2xl text-sm bg-white/10 text-white rounded-bl-none">
+                            ))}
+                            {isLoading && (
+                                <div className="flex justify-start">
+                                    <div className="max-w-[70%] px-4 py-3 rounded-2xl text-sm bg-white/10 text-white rounded-bl-none">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={chatEndRef} />
+                        </div>
+                    </CustomScrollbar>
+                )}
+
+                {/* Bottom Input Area or Voice Interface */}
+                <div className={`${mode === 'chat' ? 'px-6 pb-4' : 'flex-1 flex items-center justify-center'}`}>
+                    {mode === 'chat' ? (
+                        // Chat Input
+                        <div className="max-w-4xl mx-auto">
+                            <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl">
+                                <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent rounded-2xl pointer-events-none"></div>
+
+                                {/* Input Field */}
+                                <div className="relative flex items-center gap-3">
+                                    <textarea
+                                        value={message}
+                                        onChange={(e) => setMessage(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" && !e.shiftKey && !isLoading) {
+                                                e.preventDefault()
+                                                sendMessage()
+                                            }
+                                        }}
+                                        placeholder={isLoading ? "Waiting for response..." : "Type your message..."}
+                                        className="flex-1 bg-transparent border-none outline-none resize-none text-sm placeholder-gray-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                        rows={2}
+                                        disabled={isLoading}
+                                    />
+
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                        <button
+                                            onClick={sendMessage}
+                                            className="w-9 h-9 flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-full transition shadow-lg shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            title="Send Message"
+                                            disabled={isLoading}
+                                        >
+                                            {isLoading ? (
+                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                            ) : (
+                                                <Send size={16} />
+                                            )}
+                                        </button>
                                     </div>
                                 </div>
                             </div>
-                        )}
-                        <div ref={chatEndRef} />
-                    </div>
-                </CustomScrollbar>
-
-                {/* Compact Bottom Input Area */}
-                <div className="px-6 pb-4">
-                    <div className="max-w-4xl mx-auto">
-                        <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl">
-                            <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent rounded-2xl pointer-events-none"></div>
-
-                            {/* Input Field */}
-                            <div className="relative flex items-center gap-3">
-                                <textarea
-                                    value={message}
-                                    onChange={(e) => setMessage(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter" && !e.shiftKey && !isLoading) {
-                                            e.preventDefault()
-                                            sendMessage()
-                                        }
-                                    }}
-                                    placeholder={isLoading ? "Waiting for response..." : "Type your message..."}
-                                    className="flex-1 bg-transparent border-none outline-none resize-none text-sm placeholder-gray-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                                    rows={2}
-                                    disabled={isLoading}
-                                />
-
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-full transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title="Voice Input"
-                                        disabled={isLoading}
-                                    >
-                                        <Mic size={16} />
-                                    </button>
-                                    <button
-                                        onClick={sendMessage}
-                                        className="w-9 h-9 flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-full transition shadow-lg shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title="Send Message"
-                                        disabled={isLoading}
-                                    >
-                                        {isLoading ? (
-                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                        ) : (
-                                            <Send size={16} />
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        // Voice Interface - Full screen centered
+                        <div className="w-full h-full flex items-center justify-center">
+                            <VoiceInterface
+                                channel={mode}
+                                userId={JSON.parse(localStorage.getItem('user')).email}
+                                onResponse={(data) => {
+                                    // Handle both greeting (string) and conversation (object)
+                                    if (typeof data === 'string') {
+                                        // Initial greeting
+                                        setResponses(prev => [
+                                            ...prev,
+                                            { role: 'agent', text: data }
+                                        ])
+                                    } else {
+                                        // User message + Agent response
+                                        setResponses(prev => [
+                                            ...prev,
+                                            { role: 'user', text: data.user },
+                                            { role: 'agent', text: data.agent }
+                                        ])
+                                    }
+                                }}
+                            />
+                        </div>
+                    )}
                 </div>
             </main>
         </div>
