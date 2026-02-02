@@ -80,9 +80,10 @@ function playAudio(audioBlob) {
  * @param {Object} input - Input data (text or audioBlob)
  * @param {string} userId - User identifier
  * @param {Object} callbacks - Optional callbacks for events
+ * @param {string} userName - Optional user name for personalization
  * @returns {Promise<Object>} Processed response
  */
-export async function processMessage(channel, input, userId, callbacks = {}) {
+export async function processMessage(channel, input, userId, callbacks = {}, userName = null) {
   const { onTranscript, onResponse } = callbacks
   
   let text = ''
@@ -105,8 +106,12 @@ export async function processMessage(channel, input, userId, callbacks = {}) {
     playAudio(fillerAudio)
   }
   
-  // Step 2: Send to backend
-  const response = await sendChatMessage(text, userId)
+  // Step 2: Send to backend with channel type and user name
+  const channelType = channel === 'chat' ? 'text' : 'voice'
+  const response = await sendChatMessage(text, userId, {
+    name: userName,
+    channelType: channelType
+  })
   const responseText = response.reply
   
   // Step 3: Format output based on channel

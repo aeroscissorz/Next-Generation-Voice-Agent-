@@ -39,6 +39,8 @@ runner = Runner(
 class ChatRequest(BaseModel):
     message: str
     user_id: str
+    name: str = None  # Optional: User's name
+    channel_type: str = "text"  # Default to "text", can be "voice" for ElevenLabs
 
 # ROUTES 
 @app.get("/")
@@ -52,10 +54,23 @@ async def chat_options():
 @app.post("/chat")
 async def chat(req: ChatRequest):
     session_id = f"{req.user_id}-default"
+    
+    # Prepare the message with context about channel type and user name
+    message_text = req.message
+    
+    # Add channel context to the message for the agent
+    if req.channel_type == "voice":
+        context_prefix = "[VOICE_CHANNEL] "
+        if req.name:
+            context_prefix += f"[USER_NAME: {req.name}] "
+        message_text = context_prefix + message_text
+    elif req.name:
+        # For text channel, still include name if provided
+        message_text = f"[USER_NAME: {req.name}] " + message_text
 
     content = types.Content(
         role="user",
-        parts=[types.Part(text=req.message)]
+        parts=[types.Part(text=message_text)]
     )
 
     async def run_agent():
@@ -86,4 +101,8 @@ async def chat(req: ChatRequest):
         #  retry once (now runner sees it)
         reply = await run_agent()
 
-    return {"reply": reply}
+    return {
+        "reply": reply,
+        "channel_type": req.channel_type,
+        "user_name": req.name
+    }
