@@ -128,61 +128,65 @@ function ChatSession() {
                     </div>
                 </nav>
 
-                {/* Compact Header with Small Orb */}
-                <div className="flex items-center justify-center py-4">
-                    {mode == "chat" && <div className={`relative ${orbSize} mr-3 transition-all duration-300`}>
-                        <Orb
-                            colorsRef={orbColorsRef}
-                            agentState={null}
-                            className="w-full h-full"
-                        />
-                    </div>}
-                    <div>
-                        {mode == "chat" && <p className="text-sm text-gray-400">Chatting with</p>}
-                        <h2 className="text-lg font-medium text-white">NextGen AI Assistant</h2>
+                {/* Compact Header with Small Orb - Only show in chat mode */}
+                {mode === 'chat' && (
+                    <div className="flex items-center justify-center py-4">
+                        <div className={`relative ${orbSize} mr-3 transition-all duration-300`}>
+                            <Orb
+                                colorsRef={orbColorsRef}
+                                agentState={null}
+                                className="w-full h-full"
+                            />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-400">Chatting with</p>
+                            <h2 className="text-lg font-medium text-white">NextGen AI Assistant</h2>
+                        </div>
                     </div>
-                </div>
+                )}
 
-                {/* Scrollable Chat Area */}
-                <CustomScrollbar className="flex-1 px-6 py-4">
-                    <div className="max-w-4xl mx-auto space-y-4">
-                        {responses.map((msg, idx) => (
-                            <div
-                                key={idx}
-                                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"
-                                    }`}
-                            >
+                {/* Scrollable Chat Area - Only show in chat mode */}
+                {mode === 'chat' && (
+                    <CustomScrollbar className="flex-1 px-6 py-4">
+                        <div className="max-w-4xl mx-auto space-y-4">
+                            {responses.map((msg, idx) => (
                                 <div
-                                    className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm
-                                    ${msg.role === "user"
-                                            ? "bg-green-500 text-black rounded-br-none"
-                                            : "bg-white/10 text-white rounded-bl-none"
+                                    key={idx}
+                                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"
                                         }`}
                                 >
-                                    {msg.text}
-                                </div>
-                            </div>
-                        ))}
-                        {isLoading && (
-                            <div className="flex justify-start">
-                                <div className="max-w-[70%] px-4 py-3 rounded-2xl text-sm bg-white/10 text-white rounded-bl-none">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                    <div
+                                        className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm
+                                    ${msg.role === "user"
+                                                ? "bg-green-500 text-black rounded-br-none"
+                                                : "bg-white/10 text-white rounded-bl-none"
+                                            }`}
+                                    >
+                                        {msg.text}
                                     </div>
                                 </div>
-                            </div>
-                        )}
-                        <div ref={chatEndRef} />
-                    </div>
-                </CustomScrollbar>
+                            ))}
+                            {isLoading && (
+                                <div className="flex justify-start">
+                                    <div className="max-w-[70%] px-4 py-3 rounded-2xl text-sm bg-white/10 text-white rounded-bl-none">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={chatEndRef} />
+                        </div>
+                    </CustomScrollbar>
+                )}
 
-                {/* Compact Bottom Input Area */}
-                <div className="px-6 pb-4">
-                    <div className="max-w-4xl mx-auto">
-                        {mode === 'chat' ? (
-                            // Chat Input
+                {/* Bottom Input Area or Voice Interface */}
+                <div className={`${mode === 'chat' ? 'px-6 pb-4' : 'flex-1 flex items-center justify-center'}`}>
+                    {mode === 'chat' ? (
+                        // Chat Input
+                        <div className="max-w-4xl mx-auto">
                             <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl">
                                 <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent rounded-2xl pointer-events-none"></div>
 
@@ -219,23 +223,33 @@ function ChatSession() {
                                     </div>
                                 </div>
                             </div>
-                        ) : (
-                            // Voice Interface
-                            <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl">
-                                <VoiceInterface
-                                    channel={mode}
-                                    userId={JSON.parse(localStorage.getItem('user')).email}
-                                    onResponse={(text) => {
+                        </div>
+                    ) : (
+                        // Voice Interface - Full screen centered
+                        <div className="w-full h-full flex items-center justify-center">
+                            <VoiceInterface
+                                channel={mode}
+                                userId={JSON.parse(localStorage.getItem('user')).email}
+                                onResponse={(data) => {
+                                    // Handle both greeting (string) and conversation (object)
+                                    if (typeof data === 'string') {
+                                        // Initial greeting
                                         setResponses(prev => [
                                             ...prev,
-                                            { role: 'user', text: mode === 'voice' ? '🎤 Voice message' : '📞 Phone call' },
-                                            { role: 'agent', text }
+                                            { role: 'agent', text: data }
                                         ])
-                                    }}
-                                />
-                            </div>
-                        )}
-                    </div>
+                                    } else {
+                                        // User message + Agent response
+                                        setResponses(prev => [
+                                            ...prev,
+                                            { role: 'user', text: data.user },
+                                            { role: 'agent', text: data.agent }
+                                        ])
+                                    }
+                                }}
+                            />
+                        </div>
+                    )}
                 </div>
             </main>
         </div>

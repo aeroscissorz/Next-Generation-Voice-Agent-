@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { processMessage } from '../services/interceptor'
+import { synthesizeAudio } from '../services/elevenlabsService'
 import { Orb } from './ui/orb'
 
 /**
@@ -12,9 +13,83 @@ function VoiceInterface({ channel, userId, onResponse }) {
     const [agentState, setAgentState] = useState(null) // null | 'listening' | 'thinking' | 'talking'
     const [status, setStatus] = useState('')
     const [transcript, setTranscript] = useState('')
+    const [hasGreeted, setHasGreeted] = useState(false)
 
     const mediaRecorderRef = useRef(null)
     const audioChunksRef = useRef([])
+
+    // Play initial greeting when component mounts
+    useEffect(() => {
+        let isMounted = true
+
+        const playGreeting = async () => {
+            if (hasGreeted || !isMounted) return
+
+            // Set hasGreeted immediately to prevent double execution
+            setHasGreeted(true)
+
+            try {
+                // Get user name from localStorage
+                const user = JSON.parse(localStorage.getItem('user'))
+                const userName = user?.name || user?.email?.split('@')[0] || 'there'
+
+                // Create greeting based on channel
+                const greeting = channel === 'telephonic'
+                    ? `Hello ${userName}, thank you for calling. How may I assist you today?`
+                    : `Hey ${userName}, how are you? I'm here to help!`
+
+                setStatus('Agent greeting...')
+                setAgentState('talking')
+
+                // Synthesize greeting audio
+                const style = channel === 'telephonic' ? 'formal' : 'conversational'
+                const audioBlob = await synthesizeAudio(greeting, style)
+
+                if (!isMounted) return
+
+                // Play greeting
+                const url = URL.createObjectURL(audioBlob)
+                const audio = new Audio(url)
+
+                audio.onended = () => {
+                    URL.revokeObjectURL(url)
+                    if (isMounted) {
+                        setStatus('Click the orb to speak')
+                        setAgentState(null)
+                    }
+                }
+
+                audio.onerror = () => {
+                    URL.revokeObjectURL(url)
+                    if (isMounted) {
+                        setStatus('Click the orb to speak')
+                        setAgentState(null)
+                    }
+                }
+
+                await audio.play()
+
+                // Add greeting to chat history
+                if (onResponse && isMounted) {
+                    onResponse(greeting)
+                }
+
+            } catch (error) {
+                console.error('Error playing greeting:', error)
+                if (isMounted) {
+                    setStatus('Click the orb to speak')
+                    setAgentState(null)
+                }
+            }
+        }
+
+        playGreeting()
+
+        return () => {
+            isMounted = false
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []) // Empty dependency array - only run once on mount
 
     const startRecording = async () => {
         try {
@@ -60,6 +135,8 @@ function VoiceInterface({ channel, userId, onResponse }) {
             // Create audio blob from recorded chunks
             const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
 
+            let userTranscript = ''
+
             // Process through interceptor
             const result = await processMessage(
                 channel,
@@ -67,22 +144,15 @@ function VoiceInterface({ channel, userId, onResponse }) {
                 userId,
                 {
                     onTranscript: (text) => {
+                        userTranscript = text
                         setTranscript(text)
                         setStatus('Transcribed: ' + text)
-                    },
-                    onFiller: (text) => {
-                        setStatus(text)
                     },
                     onResponse: (text) => {
                         setStatus('Playing response...')
                         setAgentState('talking')
-                        onResponse && onResponse(text)
-                    },
-                    onAnalyzing: (analyzing) => {
-                        if (analyzing) {
-                            setStatus('Analyzing...')
-                            setAgentState('thinking')
-                        }
+                        // Send both user transcript and agent response
+                        onResponse && onResponse({ user: userTranscript, agent: text })
                     }
                 }
             )
@@ -111,10 +181,10 @@ function VoiceInterface({ channel, userId, onResponse }) {
     }
 
     return (
-        <div className="flex flex-col items-center justify-center gap-6 p-6 min-h-[350px]">
-            {/* Animated Orb */}
+        <div className="flex flex-col items-center justify-center gap-6 p-6 min-h-[500px]">
+            {/* Large Animated Orb - Centered */}
             <div
-                className="w-25 h-25 cursor-pointer transition-transform hover:scale-105"
+                className="w-96 h-96 cursor-pointer transition-transform hover:scale-105"
                 onClick={isRecording ? stopRecording : startRecording}
             >
                 <Orb
@@ -124,30 +194,22 @@ function VoiceInterface({ channel, userId, onResponse }) {
                 />
             </div>
 
-            {/* Status Text */}
+            {/* Status Text - Below orb */}
             {status && (
                 <div className="text-center">
-                    <p className={`text-sm ${status.includes('Error') ? 'text-red-400' : 'text-purple-400'
-                        } animate-pulse`}>
+                    <p className={`text-base ${status.includes('Error') ? 'text-red-400' : 'text-gray-300'
+                        }`}>
                         {status}
                     </p>
                 </div>
             )}
 
-            {/* Transcript */}
-            {transcript && (
-                <div className="max-w-md p-4 bg-white/5 rounded-lg border border-white/10">
-                    <p className="text-xs text-gray-400 mb-1">You said:</p>
-                    <p className="text-sm text-white">{transcript}</p>
-                </div>
-            )}
-
-            {/* Instructions */}
-            {!isRecording && !isProcessing && (
-                <p className="text-xs text-gray-500 text-center max-w-xs">
+            {/* Instructions - Only when idle */}
+            {!isRecording && !isProcessing && !agentState && (
+                <p className="text-sm text-gray-500 text-center max-w-xs">
                     {channel === 'telephonic'
-                        ? 'Click the orb to start telephonic call (formal tone)'
-                        : 'Click the orb to start voice conversation'}
+                        ? 'Click the orb to speak'
+                        : 'Click the orb to start talking'}
                 </p>
             )}
         </div>

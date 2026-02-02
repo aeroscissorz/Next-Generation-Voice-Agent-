@@ -12,7 +12,7 @@ const ELEVENLABS_API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY
 export async function transcribeAudio(audioBlob) {
   const formData = new FormData()
   formData.append('file', audioBlob, 'recording.webm')
-  formData.append('model_id', 'eleven_multilingual_v2')
+  formData.append('model_id', 'scribe_v1')
   
   const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
     method: 'POST',
@@ -34,14 +34,17 @@ export async function transcribeAudio(audioBlob) {
 /**
  * Convert text to speech using ElevenLabs TTS
  * @param {string} text - Text to synthesize
- * @param {string} style - 'conversational' or 'formal'
+ * @param {string} style - 'conversational' or 'formal' (kept for compatibility, but uses same settings)
+ * @param {boolean} isFiller - Whether this is a filler phrase (slower, calmer pacing)
  * @returns {Promise<Blob>} Audio blob
  */
-export async function synthesizeAudio(text, style = 'conversational') {
-  // Choose voice based on style
-  const voiceId = style === 'formal' 
-    ? 'pNInz6obpgDQGcFmaJgB'  // Adam - formal, professional
-    : '21m00Tcm4TlvDq8ikWAM'  // Rachel - conversational, friendly
+export async function synthesizeAudio(text, style = 'conversational', isFiller = false) {
+  // Always use Bella's voice - natural and conversational
+  const voiceId = 'EXAVITQu4vr4xnSDxMaL'  // Bella
+  
+  // Adjust settings for fillers to sound more natural and slower
+  const stability = isFiller ? 0.5 : 0.25  // Higher for fillers = slower, calmer
+  const styleValue = isFiller ? 0.5 : 0.9  // Less expressive for fillers
   
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
@@ -54,11 +57,11 @@ export async function synthesizeAudio(text, style = 'conversational') {
       },
       body: JSON.stringify({
         text,
-        model_id: 'eleven_turbo_v2',  // Fastest model
+        model_id: 'eleven_turbo_v2_5',  // Latest model with most natural speech
         voice_settings: {
-          stability: style === 'formal' ? 0.7 : 0.5,
-          similarity_boost: 0.75,
-          style: style === 'formal' ? 0.3 : 0.5,
+          stability: stability,
+          similarity_boost: 0.9,  // Higher = more authentic voice character
+          style: styleValue,
           use_speaker_boost: true
         }
       })
