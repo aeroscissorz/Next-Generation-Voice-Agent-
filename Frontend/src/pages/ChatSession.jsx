@@ -7,6 +7,7 @@ import { sendChatMessage } from '../api/chatApi'
 import CustomScrollbar from '../components/CustomScrollbar'
 import Sidebar from '../components/Sidebar'
 import VoiceInterface from '../components/VoiceInterface'
+import MessageContent from '../components/MessageContent'
 
 function ChatSession() {
     const navigate = useNavigate()
@@ -67,8 +68,11 @@ function ChatSession() {
             setMessage("")
             setIsLoading(true)
 
-            // Send to backend using API module
-            const data = await sendChatMessage(currentMessage, user.email)
+            // Send to backend using API module with channel type and user name
+            const data = await sendChatMessage(currentMessage, user.email, {
+                name: user.name || user.email.split('@')[0], // Use name or email prefix
+                channelType: 'text'
+            })
 
             // Add agent response
             setResponses(prev => [
@@ -156,13 +160,17 @@ function ChatSession() {
                                         }`}
                                 >
                                     <div
-                                        className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm
+                                        className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm
                                     ${msg.role === "user"
                                                 ? "bg-green-500 text-black rounded-br-none"
                                                 : "bg-white/10 text-white rounded-bl-none"
                                             }`}
                                     >
-                                        {msg.text}
+                                        {msg.role === "user" ? (
+                                            msg.text
+                                        ) : (
+                                            <MessageContent content={msg.text} />
+                                        )}
                                     </div>
                                 </div>
                             ))}
