@@ -15,7 +15,7 @@ function VoiceInterface({ channel }) {
         // Use different agent IDs based on channel
         const agentId = channel === 'telephonic'
             ? 'agent_3501kgf1jzb1fg2936y8e2fy4j2s'  // Telephonic agent
-            : 'agent_1301kgewzdaef7q8vq041gwkgeks'  // Voice agent
+            : 'agent_2501kgfq7nnvffgbd2yhwy9egb2a'  // Voice agent
 
         widgetElement.setAttribute('agent-id', agentId)
 

@@ -1,141 +1,89 @@
 /**
  * Interceptor Service - Channel-agnostic message processing
- * Handles chat, voice, and telephonic channels
+ * Handles chat channel formatting
+ * Voice/Telephonic channels are handled by ElevenLabs Widget
  */
 
-import { transcribeAudio, synthesizeAudio } from './elevenlabsService'
 import { sendChatMessage } from '../api/chatApi'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
-// Filler phrases for natural conversation during processing
-const FILLERS = {
-  billing: [
-    "Let me pull up your billing information for you",
-    "Just checking your account details",
-    "One moment while I look at your billing history",
-    "Let me see what's going on with your account",
-    "Alright, checking your payment information now"
-  ],
-  support: [
-    "Let me look into that for you",
-    "Okay, checking your support tickets",
-    "Give me just a second to pull up your case",
-    "Let me see what I can find out about that",
-    "Alright, looking into your issue now"
-  ],
-  generic: [
-    "Just a moment",
-    "Let me check on that",
-    "Okay, give me one second",
-    "Alright, let me see",
-    "Hold on just a moment"
-  ]
-}
-
-/**
- * Get appropriate filler phrase based on message content
- * @param {string} text - User's message
- * @returns {string} Filler phrase
- */
-function getFiller(text) {
-  const lower = text.toLowerCase()
-  
-  if (lower.includes('bill') || lower.includes('payment') || lower.includes('charge')) {
-    return FILLERS.billing[Math.floor(Math.random() * FILLERS.billing.length)]
-  }
-  
-  if (lower.includes('support') || lower.includes('help') || lower.includes('issue')) {
-    return FILLERS.support[Math.floor(Math.random() * FILLERS.support.length)]
-  }
-  
-  return FILLERS.generic[Math.floor(Math.random() * FILLERS.generic.length)]
-}
-
-/**
- * Play audio blob
- * @param {Blob} audioBlob - Audio to play
- * @returns {Promise<void>}
- */
-function playAudio(audioBlob) {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(audioBlob)
-    const audio = new Audio(url)
-    
-    audio.onended = () => {
-      URL.revokeObjectURL(url)
-      resolve()
-    }
-    
-    audio.onerror = () => {
-      URL.revokeObjectURL(url)
-      resolve()
-    }
-    
-    audio.play().catch(() => resolve())
-  })
-}
+// Initialize Gemini AI for text formatting
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GOOGLE_API_KEY)
+const model = genAI.getGenerativeModel({ model: import.meta.env.VITE_GOOGLE_GENAI_MODEL })
 
 /**
  * Process message through interceptor layer
  * @param {string} channel - 'chat' | 'voice' | 'telephonic'
- * @param {Object} input - Input data (text or audioBlob)
+ * @param {Object} input - Input data (text for chat, voice handled by widget)
  * @param {string} userId - User identifier
- * @param {Object} callbacks - Optional callbacks for events
+ * @param {Object} callbacks - Optional callbacks for events (unused for chat)
  * @param {string} userName - Optional user name for personalization
  * @returns {Promise<Object>} Processed response
  */
 export async function processMessage(channel, input, userId, callbacks = {}, userName = null) {
-  const { onTranscript, onResponse } = callbacks
-  
-  let text = ''
-  
-  // Step 1: Normalize input to text
-  if (channel === 'chat') {
-    text = input.text
-    
-  } else if (channel === 'voice' || channel === 'telephonic') {
-    // Transcribe audio using ElevenLabs STT
-    text = await transcribeAudio(input.audioBlob)
-    onTranscript && onTranscript(text)
-    
-    // Get and play filler while processing (don't show in transcript)
-    const fillerText = getFiller(text)
-    const style = channel === 'voice' ? 'conversational' : 'formal'
-    const fillerAudio = await synthesizeAudio(fillerText, style, true)  // true = isFiller
-    
-    // Play filler audio (non-blocking) - don't trigger onFiller to avoid showing in UI
-    playAudio(fillerAudio)
+  // Voice/Telephonic channels: Handled entirely by ElevenLabs Widget
+  // Widget manages STT, backend calls, TTS, and conversation flow
+  // See: eleven_labs_prompts/system.md for widget configuration
+  if (channel === 'voice' || channel === 'telephonic') {
+    return {
+      type: 'voice',
+      message: 'Voice channel handled by ElevenLabs Widget',
+      handledBy: 'elevenlabs-widget'
+    }
   }
   
-  // Step 2: Send to backend with channel type and user name
-  const channelType = channel === 'chat' ? 'text' : 'voice'
+  // Chat channel processing
+  const text = input.text
+  
+  // Step 1: Send to backend (backend returns pure data)
   const response = await sendChatMessage(text, userId, {
-    name: userName,
-    channelType: channelType
+    name: userName
   })
   const responseText = response.reply
   
-  // Step 3: Format output based on channel
-  if (channel === 'chat') {
-    return {
-      type: 'text',
-      message: responseText,
-      handledBy: 'backend'
-    }
+  // Step 2: Format pure data into structured markdown using Gemini AI
+  const formattedResponse = await formatForTextChannel(responseText)
+  console.log(formattedResponse)
+  
+  return {
+    type: 'text',
+    message: formattedResponse,
+    rawData: responseText, // Keep original for reference
+    handledBy: 'backend'
+  }
+}
+
+/**
+ * Format pure data for text channel using Gemini AI
+ * Converts natural language response into structured markdown
+ * @param {string} text - Pure data from backend
+ * @returns {Promise<string>} Formatted markdown
+ */
+async function formatForTextChannel(text) {
+  try {
+    const prompt = `You are a formatting assistant for a customer service chat interface. Convert the following plain text response into well-formatted markdown.
+
+Rules:
+- Use **bold** for important information like amounts, dates, invoice numbers, and statuses
+- Use bullet points (*) for lists of items or options
+- Use tables (markdown format) when showing multiple invoices, breakdowns, or structured data
+- Keep the friendly, conversational tone intact
+- Add appropriate line breaks for readability
+- Use ✓ checkmarks for confirmations or completed actions
+- Do NOT change the content, meaning, or add new information - only format it
+- Return ONLY the formatted markdown, no explanations or meta-commentary
+
+Plain text to format:
+${text}`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const formattedText = response.text();
     
-  } else if (channel === 'voice' || channel === 'telephonic') {
-    // Convert response to speech using ElevenLabs TTS
-    const style = channel === 'voice' ? 'conversational' : 'formal'
-    const audio = await synthesizeAudio(responseText, style)
-    
-    if (onResponse) {
-      onResponse(responseText, audio)
-    }
-    
-    return {
-      type: 'audio',
-      audio,
-      text: responseText,
-      handledBy: 'backend'
-    }
+    return formattedText;
+  } catch (error) {
+    console.error('Error formatting with Gemini:', error);
+    // Fallback to original text if Gemini fails
+    return text;
   }
 }

@@ -39,8 +39,11 @@ runner = Runner(
 class ChatRequest(BaseModel):
     message: str
     user_id: str
-    name: str = None  # Optional: User's name
-    channel_type: str = "text"  # Default to "text", can be "voice" for ElevenLabs
+    name: str = None  # Optional: User's name for personalization
+
+class NewSessionRequest(BaseModel):
+    user_id: str
+    name: str = None  # Optional: User's name for personalization
 
 # ROUTES 
 @app.get("/")
@@ -51,21 +54,64 @@ def health():
 async def chat_options():
     return {"status": "ok"}
 
+@app.post("/new-session")
+async def new_session(req: NewSessionRequest):
+    """
+    Create a new session for a user.
+    This will reset the conversation history and start fresh.
+    """
+    session_id = f"{req.user_id}-default"
+    
+    try:
+        # Create or reset the session
+        await session_service.create_session(
+            app_name=APP_NAME,
+            user_id=req.user_id,
+            session_id=session_id,
+        )
+        
+        return {
+            "status": "success",
+            "message": "New session created successfully",
+            "session_id": session_id,
+            "user_id": req.user_id,
+            "user_name": req.name
+        }
+    except Exception as e:
+        # If session already exists, delete and recreate
+        try:
+            await session_service.delete_session(
+                app_name=APP_NAME,
+                user_id=req.user_id,
+                session_id=session_id,
+            )
+            await session_service.create_session(
+                app_name=APP_NAME,
+                user_id=req.user_id,
+                session_id=session_id,
+            )
+            return {
+                "status": "success",
+                "message": "Session reset successfully",
+                "session_id": session_id,
+                "user_id": req.user_id,
+                "user_name": req.name
+            }
+        except Exception as reset_error:
+            return {
+                "status": "error",
+                "message": f"Failed to create session: {str(reset_error)}"
+            }
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     session_id = f"{req.user_id}-default"
     
-    # Prepare the message with context about channel type and user name
+    # Prepare the message with user context
     message_text = req.message
     
-    # Add channel context to the message for the agent
-    if req.channel_type == "voice":
-        context_prefix = "[VOICE_CHANNEL] "
-        if req.name:
-            context_prefix += f"[USER_NAME: {req.name}] "
-        message_text = context_prefix + message_text
-    elif req.name:
-        # For text channel, still include name if provided
+    # Add user name context if provided
+    if req.name:
         message_text = f"[USER_NAME: {req.name}] " + message_text
 
     content = types.Content(
@@ -103,6 +149,5 @@ async def chat(req: ChatRequest):
 
     return {
         "reply": reply,
-        "channel_type": req.channel_type,
         "user_name": req.name
     }

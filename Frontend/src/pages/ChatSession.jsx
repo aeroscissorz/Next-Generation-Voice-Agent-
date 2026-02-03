@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { Settings as SettingsIcon, Send, Download, LogOut } from 'lucide-react'
+import { Settings as SettingsIcon, Send, Download, LogOut, MessageSquarePlus } from 'lucide-react'
 import Aurora from '../components/Aurora'
 import { Orb } from '../components/ui/orb'
-import { sendChatMessage } from '../api/chatApi'
 import CustomScrollbar from '../components/CustomScrollbar'
 import Sidebar from '../components/Sidebar'
 import VoiceInterface from '../components/VoiceInterface'
 import MessageContent from '../components/MessageContent'
+import { processMessage } from '../services/interceptor'
+import { createNewSession } from '../api/chatApi'
 
 function ChatSession() {
     const navigate = useNavigate()
@@ -51,6 +52,36 @@ function ChatSession() {
         navigate('/')
     }
 
+    const handleNewConversation = async () => {
+        const user = JSON.parse(localStorage.getItem("user"))
+
+        try {
+            setIsLoading(true)
+
+            // Call backend to create new session
+            await createNewSession(
+                user.email,
+                user.name || user.email.split('@')[0]
+            )
+
+            // Clear chat history
+            setResponses([])
+            setMessage('')
+
+            // Optional: Show success message
+            setResponses([
+                { role: "agent", text: "New conversation started! How can I help you today?" }
+            ])
+        } catch (error) {
+            console.error("Error creating new session:", error)
+            setResponses([
+                { role: "agent", text: "Sorry, there was an error starting a new conversation. Please try again." }
+            ])
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
     const sendMessage = async () => {
         if (!message.trim() || isLoading) return
 
@@ -68,16 +99,19 @@ function ChatSession() {
             setMessage("")
             setIsLoading(true)
 
-            // Send to backend using API module with channel type and user name
-            const data = await sendChatMessage(currentMessage, user.email, {
-                name: user.name || user.email.split('@')[0], // Use name or email prefix
-                channelType: 'text'
-            })
+            // Process message through interceptor for text channel formatting
+            const result = await processMessage(
+                'chat',
+                { text: currentMessage },
+                user.email,
+                {},
+                user.name || user.email.split('@')[0]
+            )
 
-            // Add agent response
+            // Add agent response (already formatted by interceptor)
             setResponses(prev => [
                 ...prev,
-                { role: "agent", text: data.reply }
+                { role: "agent", text: result.message }
             ])
         } catch (error) {
             console.error("Error sending message:", error)
@@ -112,6 +146,15 @@ function ChatSession() {
                     <div className="text-xl font-bold">NextGen Voice</div>
 
                     <div className="flex items-center gap-4">
+                        <button
+                            onClick={handleNewConversation}
+                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-green-500/10 border border-green-500/30 hover:bg-green-500/20 hover:border-green-500/50 rounded-full transition text-green-400"
+                            disabled={isLoading}
+                        >
+                            <MessageSquarePlus size={16} />
+                            <span>Start New Conversation</span>
+                        </button>
+
                         <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-700 hover:border-gray-500 rounded-full transition">
                             <SettingsIcon size={16} />
                             <span>Configuration</span>
