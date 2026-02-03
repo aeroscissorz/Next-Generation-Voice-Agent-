@@ -57,7 +57,7 @@ billing_agent = LlmAgent(
    # get_wallet_amount_Already_Settled,
    check_wallet_amount_settlement,
     update_wallet_amount,
-    create_wallet_entry],
+    create_wallet_entry, check_outage],
 
 )
 
