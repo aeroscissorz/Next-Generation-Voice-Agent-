@@ -6,12 +6,11 @@ import API_BASE_URL, { API_ENDPOINTS } from './config';
  * @param {string} userId - The user's email/ID
  * @param {Object} options - Optional parameters
  * @param {string} options.name - User's name for personalization
- * @param {string} options.channelType - Channel type: 'text' or 'voice' (default: 'text')
- * @returns {Promise<{reply: string, channel_type: string, user_name: string|null}>} The agent's response
+ * @returns {Promise<{reply: string, user_name: string|null}>} The agent's response
  */
 export const sendChatMessage = async (message, userId, options = {}) => {
   try {
-    const { name = null, channelType = 'text' } = options;
+    const { name = null } = options;
     
     const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.CHAT}`, {
       method: 'POST',
@@ -22,7 +21,6 @@ export const sendChatMessage = async (message, userId, options = {}) => {
         message,
         user_id: userId,
         name,
-        channel_type: channelType,
       }),
     });
 
@@ -54,6 +52,37 @@ export const checkHealth = async () => {
     return data;
   } catch (error) {
     console.error('Error checking health:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new session for a user (resets conversation history)
+ * @param {string} userId - The user's email/ID
+ * @param {string} name - User's name for personalization (optional)
+ * @returns {Promise<{status: string, message: string, session_id: string, user_id: string, user_name: string|null}>} Session creation response
+ */
+export const createNewSession = async (userId, name = null) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/new-session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        name,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error creating new session:', error);
     throw error;
   }
 };
