@@ -168,8 +168,8 @@ def create_wallet_entry(user_id: str, invoice_id: str):
             .table("wallet_amount")
             .insert({
                 "user_id": user_id,
-                "amount": "300",
-                "settled": "Yes",
+                "amount": "700",
+                "settled": "No",
                 "invoice_id": invoice_id
             })
             .execute()
@@ -187,9 +187,9 @@ def update_wallet_amount(user_id: str, invoice_id: str):
             supabase
             .table("wallet_amount")
             .update({
-                "amount": "1400",
+                "amount": "700",
                 "settled_date": datetime.now().strftime("%Y-%m-%d"),
-                "settled": "Yes"
+                "settled": "No"
             })
             .eq("user_id", user_id)
             .eq("invoice_id", invoice_id)
