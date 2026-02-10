@@ -1,6 +1,6 @@
 # API Module
 
-This folder contains all API-related functions for communicating with the backend and external services.
+This folder contains all API-related functions for communicating with the interceptor and external services.
 
 ## Structure
 
@@ -55,7 +55,7 @@ console.log('User exists:', exists.exists);
 The API base URL is configured in `config.js` and reads from the environment variable:
 
 ```
-VITE_BACKEND_URL=http://localhost:8000
+VITE_INTERCEPTOR_URL=http://localhost:8001
 ```
 
 ## Error Handling

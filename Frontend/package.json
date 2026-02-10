@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.16",
-    "@google/generative-ai": "^0.24.1",
     "@gsap/react": "^2.1.2",
     "@radix-ui/react-avatar": "^1.1.11",
     "@react-three/drei": "^10.7.7",

@@ -19,7 +19,8 @@ function MessageContent({ content }) {
  */
 function parseMarkdown(text) {
     const elements = []
-    const lines = text.split('\n')
+    const safeText = typeof text === 'string' ? text : String(text ?? '')
+    const lines = safeText.split('\n')
     let i = 0
 
     while (i < lines.length) {

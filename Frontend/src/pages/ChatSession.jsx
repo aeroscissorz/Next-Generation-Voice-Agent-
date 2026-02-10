@@ -7,8 +7,7 @@ import CustomScrollbar from '../components/CustomScrollbar'
 import Sidebar from '../components/Sidebar'
 import VoiceInterface from '../components/VoiceInterface'
 import MessageContent from '../components/MessageContent'
-import { processMessage } from '../services/interceptor'
-import { createNewSession } from '../api/chatApi'
+import { createNewSession, sendChatMessage } from '../api/chatApi'
 
 function ChatSession() {
     const navigate = useNavigate()
@@ -99,19 +98,21 @@ function ChatSession() {
             setMessage("")
             setIsLoading(true)
 
-            // Process message through interceptor for text channel formatting
-            const result = await processMessage(
-                'chat',
-                { text: currentMessage },
+            const result = await sendChatMessage(
+                currentMessage,
                 user.email,
-                {},
-                user.name || user.email.split('@')[0]
+                { name: user.name || user.email.split('@')[0] }
             )
+            const agentText =
+                typeof result?.reply === 'string'
+                    ? result.reply
+                    : typeof result?.raw_reply === 'string'
+                        ? result.raw_reply
+                        : 'Sorry, I could not format the response. Please try again.'
 
-            // Add agent response (already formatted by interceptor)
             setResponses(prev => [
                 ...prev,
-                { role: "agent", text: result.message }
+                { role: "agent", text: agentText }
             ])
         } catch (error) {
             console.error("Error sending message:", error)
