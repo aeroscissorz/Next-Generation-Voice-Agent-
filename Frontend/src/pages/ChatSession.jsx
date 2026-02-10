@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Settings as SettingsIcon, Send, Download, LogOut, MessageSquarePlus } from 'lucide-react'
 import Aurora from '../components/Aurora'
 import { Orb } from '../components/ui/orb'
@@ -7,8 +7,7 @@ import CustomScrollbar from '../components/CustomScrollbar'
 import Sidebar from '../components/Sidebar'
 import VoiceInterface from '../components/VoiceInterface'
 import MessageContent from '../components/MessageContent'
-import { processMessage } from '../services/interceptor'
-import { createNewSession } from '../api/chatApi'
+import { sendChatMessage, createNewSession } from '../api/chatApi'
 
 function ChatSession() {
     const navigate = useNavigate()
@@ -99,19 +98,20 @@ function ChatSession() {
             setMessage("")
             setIsLoading(true)
 
-            // Process message through interceptor for text channel formatting
-            const result = await processMessage(
-                'chat',
-                { text: currentMessage },
+            // Process message through backend (formatting handled by backend interceptor)
+            const result = await sendChatMessage(
+                currentMessage,
                 user.email,
-                {},
-                user.name || user.email.split('@')[0]
+                {
+                    name: user.name || user.email.split('@')[0],
+                    channel: 'chat'
+                }
             )
 
-            // Add agent response (already formatted by interceptor)
+            // Add agent response (already formatted by backend)
             setResponses(prev => [
                 ...prev,
-                { role: "agent", text: result.message }
+                { role: "agent", text: result.reply }
             ])
         } catch (error) {
             console.error("Error sending message:", error)
