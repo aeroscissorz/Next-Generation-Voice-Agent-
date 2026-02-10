@@ -21,32 +21,26 @@ This service ensures the frontend receives consistently formatted markdown respo
 
 Frontend → Interceptor → Backend (and vice versa)
 
-### Flow
+### Request Lifecycle
 
-1. Frontend sends `/chat` request
-2. Interceptor immediately forwards request to backend
-3. Backend returns raw response
-4. Interceptor:
-   - Normalizes response
-   - Formats reply using Gemini
-5. Interceptor returns:
+1. Frontend sends `POST /chat`
+2. Interceptor validates request using Pydantic models
+3. Request is forwarded asynchronously to backend using `httpx.AsyncClient`
+4. Backend response is parsed and normalized
+5. If `GOOGLE_API_KEY` is configured:
+   - Response is reformatted using Gemini (`google-generativeai`)
+6. Final response is returned to frontend with:
    - `reply` (formatted markdown)
    - `raw_reply` (original backend text)
 
 The user input is NOT modified before forwarding.
 
 ---
+### ChatRequest
 
-## Features
-
-- Async proxy forwarding using `httpx`
-- Output formatting using `google-generativeai`
-- Configurable backend URL
-- Configurable model selection
-- Timeout protection
-- Error propagation from backend
-- Structured logging
-- CORS enabled
-
-
-
+```json
+{
+  "message": "string",
+  "user_id": "string",
+  "name": "optional"
+}
