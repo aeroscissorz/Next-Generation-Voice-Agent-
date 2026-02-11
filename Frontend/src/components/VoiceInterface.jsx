@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Mic, MicOff, PhoneOff } from 'lucide-react'
 import { Orb } from './ui/orb'
+import useHoldMusic from './useHoldMusic'
 
 const INTERCEPTOR_URL =
     import.meta.env.VITE_INTERCEPTOR_URL ||
@@ -19,6 +20,9 @@ function VoiceInterface({ channel, userId, onResponse }) {
     const [error, setError] = useState(null)
     const [isMicOn, setIsMicOn] = useState(false)
     const [debugEvents, setDebugEvents] = useState([])
+
+    // Hold music — plays during tool call processing
+    const { startMusic, stopMusic } = useHoldMusic(0.12)
 
     const pcRef = useRef(null)
     const dcRef = useRef(null)
@@ -177,6 +181,7 @@ function VoiceInterface({ channel, userId, onResponse }) {
             case 'response.audio_transcript.delta':
             case 'response.text.delta':
                 if (data.delta) {
+                    stopMusic() // Agent is speaking — stop hold music
                     setAssistantText(prev => prev + data.delta)
                     setStatus('speaking')
                 }
@@ -199,8 +204,14 @@ function VoiceInterface({ channel, userId, onResponse }) {
 
                 console.log(`Tool call: ${toolName}`, argsJson)
 
+                // Start hold music while we wait for the backend
+                startMusic()
+
                 // Forward to interceptor
                 const result = await handleToolCall(callId, toolName, argsJson)
+
+                // Stop hold music — we have the result
+                stopMusic()
 
                 // Send tool result back to OpenAI
                 const dc = dcRef.current
@@ -220,7 +231,7 @@ function VoiceInterface({ channel, userId, onResponse }) {
                         type: 'response.create',
                     }))
                 }
-                break
+                break;
             }
 
             case 'response.done':
@@ -377,6 +388,7 @@ function VoiceInterface({ channel, userId, onResponse }) {
         setIsMicOn(false)
         setStatus('disconnected')
         resetSilenceTimer()
+        stopMusic() // Ensure hold music stops on disconnect
         nudgeCountRef.current = 0
 
         if (dcRef.current) {
@@ -398,7 +410,7 @@ function VoiceInterface({ channel, userId, onResponse }) {
             audioElRef.current.srcObject = null
             // Do NOT remove from DOM, it's rendered by React
         }
-    }, [resetSilenceTimer])
+    }, [resetSilenceTimer, stopMusic])
 
     /**
      * Toggle the microphone on/off.
