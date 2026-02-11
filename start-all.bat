@@ -9,7 +9,7 @@ start "Backend Service" cmd /k "cd /d "%~dp0Backend" && venv\Scripts\python.exe 
 timeout /t 3 /nobreak >nul
 
 echo Starting Interceptor Service (Port 8001)...
-start "Interceptor Service" cmd /k "cd /d "%~dp0Backend" && venv\Scripts\python.exe -m uvicorn ..\Interceptor\main:app --host 127.0.0.1 --port 8001 --reload"
+start "Interceptor Service" cmd /k "cd /d "%~dp0Interceptor" && venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8001 --reload"
 timeout /t 3 /nobreak >nul
 
 echo Starting Frontend (Port 5173)...

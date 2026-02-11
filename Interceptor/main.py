@@ -3,7 +3,7 @@ Interceptor Service - Middleware layer between Frontend and Backend
 Handles channel-specific message processing and formatting
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -21,6 +21,8 @@ logger = logging.getLogger("Interceptor")
 
 # Load environment variables
 load_dotenv(override=True)
+
+from voice_handler import create_voice_handler
 
 app = FastAPI(title="Interceptor Service")
 
@@ -249,3 +251,57 @@ if __name__ == "__main__":
     port = int(os.getenv("INTERCEPTOR_PORT", 8001))
     logger.info(f"🚀 Starting Interceptor Service on port {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
+
+@app.websocket("/ws/voice")
+async def voice_websocket(websocket: WebSocket):
+    """
+    WebSocket endpoint for voice conversations
+    Handles bidirectional voice communication with ElevenLabs
+    """
+    await websocket.accept()
+    logger.info("🎤 Voice WebSocket connection established")
+    
+    try:
+        # Get user info from initial message
+        init_message = await websocket.receive_json()
+        user_id = init_message.get("user_id")
+        user_name = init_message.get("user_name")
+        
+        if not user_id:
+            await websocket.send_json({
+                "type": "error",
+                "message": "user_id is required"
+            })
+            await websocket.close()
+            return
+        
+        logger.info(f"👤 Voice session started for user: {user_id}")
+        
+        # Create voice handler
+        voice_handler = await create_voice_handler(BACKEND_URL)
+        
+        # Handle the conversation
+        await voice_handler.handle_voice_conversation(
+            websocket,
+            user_id,
+            user_name
+        )
+        
+    except WebSocketDisconnect:
+        logger.info("🔌 Voice WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"✗ Voice WebSocket error: {e}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": str(e)
+            })
+        except:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
+        logger.info("✓ Voice WebSocket closed")

@@ -5,7 +5,7 @@ import Aurora from '../components/Aurora'
 import { Orb } from '../components/ui/orb'
 import CustomScrollbar from '../components/CustomScrollbar'
 import Sidebar from '../components/Sidebar'
-import VoiceInterface from '../components/VoiceInterface'
+import VoiceInterfaceNew from '../components/VoiceInterfaceNew'
 import MessageContent from '../components/MessageContent'
 import { sendChatMessage, createNewSession } from '../api/chatApi'
 
@@ -278,25 +278,12 @@ function ChatSession() {
                     ) : (
                         // Voice Interface - Full screen centered
                         <div className="w-full h-full flex items-center justify-center">
-                            <VoiceInterface
-                                channel={mode}
+                            <VoiceInterfaceNew
                                 userId={JSON.parse(localStorage.getItem('user')).email}
-                                onResponse={(data) => {
-                                    // Handle both greeting (string) and conversation (object)
-                                    if (typeof data === 'string') {
-                                        // Initial greeting
-                                        setResponses(prev => [
-                                            ...prev,
-                                            { role: 'agent', text: data }
-                                        ])
-                                    } else {
-                                        // User message + Agent response
-                                        setResponses(prev => [
-                                            ...prev,
-                                            { role: 'user', text: data.user },
-                                            { role: 'agent', text: data.agent }
-                                        ])
-                                    }
+                                userName={JSON.parse(localStorage.getItem('user')).name || JSON.parse(localStorage.getItem('user')).email.split('@')[0]}
+                                onClose={() => {
+                                    // Return to chat mode by reloading with chat mode
+                                    window.location.href = '/dashboard';
                                 }}
                             />
                         </div>
