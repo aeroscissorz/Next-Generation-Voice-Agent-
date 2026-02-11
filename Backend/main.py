@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
@@ -39,11 +40,11 @@ runner = Runner(
 class ChatRequest(BaseModel):
     message: str
     user_id: str
-    name: str = None  # Optional: User's name for personalization
+    name: Optional[str] = None  # Optional: User's name for personalization
 
 class NewSessionRequest(BaseModel):
     user_id: str
-    name: str = None  # Optional: User's name for personalization
+    name: Optional[str] = None  # Optional: User's name for personalization
 
 # ROUTES 
 @app.get("/")
@@ -110,6 +111,9 @@ async def chat(req: ChatRequest):
     # Prepare the message with user context
     message_text = req.message
     
+    # Inject USER_ID so the agent knows which ID to use for tools
+    message_text = f"[USER_ID: {req.user_id}] " + message_text
+
     # Add user name context if provided
     if req.name:
         message_text = f"[USER_NAME: {req.name}] " + message_text

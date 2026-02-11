@@ -280,17 +280,14 @@ function ChatSession() {
                         <div className="w-full h-full flex items-center justify-center">
                             <VoiceInterface
                                 channel={mode}
-                                userId={JSON.parse(localStorage.getItem('user')).email}
+                                userId={JSON.parse(localStorage.getItem('user'))?.email}
                                 onResponse={(data) => {
-                                    // Handle both greeting (string) and conversation (object)
                                     if (typeof data === 'string') {
-                                        // Initial greeting
                                         setResponses(prev => [
                                             ...prev,
                                             { role: 'agent', text: data }
                                         ])
-                                    } else {
-                                        // User message + Agent response
+                                    } else if (data?.user && data?.agent) {
                                         setResponses(prev => [
                                             ...prev,
                                             { role: 'user', text: data.user },
