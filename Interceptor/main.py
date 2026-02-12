@@ -427,7 +427,7 @@ async def _handle_validate_user(req: ToolCallRequest) -> dict:
             }
 
         # Check if ID exists in 'users_voice' table using EQ (exact match for integers)
-        response = supabase.table("users_voice").select("id").eq("id", target_id).execute()
+        response = supabase.table("users_voice").select("user_id").eq("user_id", target_id).execute()
         
         # response.data is a list of rows. If empty, user not found.
         if not response.data or len(response.data) == 0:
@@ -442,7 +442,7 @@ async def _handle_validate_user(req: ToolCallRequest) -> dict:
             }
 
         # User found
-        db_user_id = str(response.data[0]['id']) # ensuring it is string for consistency
+        db_user_id = str(response.data[0]['user_id']) # ensuring it is string for consistency
         logger.info("User validated successfully: %s", db_user_id)
         
         authenticated = True
