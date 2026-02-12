@@ -131,6 +131,45 @@ VOICE_TOOLS = [
 
 
 # ---------------------------------------------------------------------------
+# Dynamic Prompt Injection - Channel-specific context
+# ---------------------------------------------------------------------------
+
+def inject_chat_context(message: str, user_id: str) -> str:
+    """
+    Inject chat-specific context into the message.
+    Chat users are already authenticated via Supabase, so we can be more direct.
+    """
+    context_prefix = f"""[CONTEXT: User is authenticated via web interface. User ID: {user_id} is verified. 
+You can proceed directly with their request without asking for identification.
+User expects detailed, formatted responses with all relevant information.]
+
+User message: """
+    return context_prefix + message
+
+
+def inject_voice_context(message: str, user_id: str, is_authenticated: bool = False) -> str:
+    """
+    Inject voice-specific context into the message.
+    Voice users go through a 3-step authentication process.
+    """
+    if is_authenticated:
+        context_prefix = f"""[CONTEXT: Voice call. User has been authenticated (User ID: {user_id} verified via voice).
+Keep responses brief and conversational (1-3 sentences max).
+Focus on the most important information only.
+Avoid technical jargon unless necessary.]
+
+User message: """
+    else:
+        context_prefix = f"""[CONTEXT: Voice call. User authentication in progress.
+This is part of the voice authentication flow.
+Keep responses brief and focused on verification.]
+
+User message: """
+    
+    return context_prefix + message
+
+
+# ---------------------------------------------------------------------------
 # Formatting helpers
 # ---------------------------------------------------------------------------
 
@@ -161,7 +200,7 @@ Rules:
 
 Plain response:
 {reply_text}
-"""
+""" 
         response = client.models.generate_content(
             model=GOOGLE_GENAI_MODEL,
             contents=prompt
@@ -261,7 +300,17 @@ async def new_session(req: NewSessionRequest):
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
-    backend_response = await proxy_request("POST", "/chat", req.model_dump())
+    # Inject chat-specific context
+    enhanced_message = inject_chat_context(req.message, req.user_id)
+    
+    # Forward to backend with enhanced message
+    backend_payload = {
+        "message": enhanced_message,
+        "user_id": req.user_id,
+        "name": req.name
+    }
+    
+    backend_response = await proxy_request("POST", "/chat", backend_payload)
     logger.info("Chat request user_id=%s message_len=%s", req.user_id, len(req.message or ""))
     logger.info("Backend response type=%s", type(backend_response).__name__)
 
@@ -488,10 +537,13 @@ async def _handle_forward_to_backend(req: ToolCallRequest) -> dict:
 
     # Use the validated customer ID (2-digit number), not the email
     customer_id = _voice_customer_id.get(req.user_id, req.user_id)
+    
+    # Inject voice-specific context
+    enhanced_message = inject_voice_context(user_message, customer_id, is_authenticated=True)
 
     try:
         backend_response = await proxy_request("POST", "/chat", {
-            "message": user_message,
+            "message": enhanced_message,
             "user_id": customer_id,
         })
 
