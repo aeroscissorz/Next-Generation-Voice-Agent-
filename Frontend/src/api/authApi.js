@@ -25,6 +25,7 @@ export const loginUser = async (email, password) => {
     return {
       success: true,
       data: {
+        user_id: data.user_id,
         email: data.email_address,
         name: data.name,
       },

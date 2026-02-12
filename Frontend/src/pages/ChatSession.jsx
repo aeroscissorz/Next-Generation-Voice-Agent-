@@ -60,7 +60,7 @@ function ChatSession() {
 
             // Call backend to create new session
             await createNewSession(
-                user.email,
+                user.user_id,
                 user.name || user.email.split('@')[0]
             )
 
@@ -103,7 +103,7 @@ function ChatSession() {
             const result = await processMessage(
                 'chat',
                 { text: currentMessage },
-                user.email,
+                user.user_id,
                 {},
                 user.name || user.email.split('@')[0]
             )
@@ -280,7 +280,7 @@ function ChatSession() {
                         <div className="w-full h-full flex items-center justify-center">
                             <VoiceInterface
                                 channel={mode}
-                                userId={JSON.parse(localStorage.getItem('user'))?.email}
+                                userId={JSON.parse(localStorage.getItem('user'))?.user_id}
                                 onResponse={(data) => {
                                     if (typeof data === 'string') {
                                         setResponses(prev => [
