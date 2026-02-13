@@ -191,7 +191,7 @@ Rules:
 - No markdown, no bullet points, no special characters.
 - Say "dollar" not "$", say "percent" not "%".
 - Numbers should be spoken naturally (e.g., "fourteen hundred" not "1400").
-- Keep it brief — maximum 2 sentences.
+- Keep it brief — not more than 3 sentences if possible.
 
 Response to convert:
 {reply_text}
