@@ -108,15 +108,10 @@ async def new_session(req: NewSessionRequest):
 async def chat(req: ChatRequest):
     session_id = f"{req.user_id}-default"
     
-    # Prepare the message with user context
+    # Message comes pre-injected with context from Interceptor
+    # The Interceptor handles channel-specific context injection
+    # Format: [CONTEXT: ...] User message: <actual message>
     message_text = req.message
-    
-    # Inject USER_ID so the agent knows which ID to use for tools
-    message_text = f"[USER_ID: {req.user_id}] " + message_text
-
-    # Add user name context if provided
-    if req.name:
-        message_text = f"[USER_NAME: {req.name}] " + message_text
 
     content = types.Content(
         role="user",
