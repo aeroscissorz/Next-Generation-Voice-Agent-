@@ -31,6 +31,8 @@ function VoiceInterface({ channel, userId, onResponse }) {
     const connectedRef = useRef(false)
     const silenceTimerRef = useRef(null)
     const nudgeCountRef = useRef(0)
+    const isProcessingToolRef = useRef(false)  // Prevent duplicate tool responses
+    const audioContextRef = useRef(null)  // For noise filtering
 
     const SILENCE_TIMEOUT_MS = 20000 // 20 seconds of silence before nudge
     const MAX_NUDGES = 2 // Max nudges before staying quiet
@@ -117,7 +119,16 @@ function VoiceInterface({ channel, userId, onResponse }) {
         setStatus('processing')
         logEvent(`Tool Call: ${toolName}`)
         try {
-            const args = JSON.parse(argsJson)
+            let args
+            try {
+                args = JSON.parse(argsJson)
+            } catch (parseErr) {
+                // OpenAI sometimes sends filler text instead of JSON
+                // Return error so the model retries with proper arguments
+                console.warn(`Invalid tool args for ${toolName}:`, argsJson)
+                return JSON.stringify({ error: `Invalid arguments. Please retry the tool call with proper JSON arguments.` })
+            }
+            
             const response = await fetch(`${INTERCEPTOR_URL}/voice/tool-call`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -198,20 +209,21 @@ function VoiceInterface({ channel, userId, onResponse }) {
                 break
 
             case 'response.function_call_arguments.done': {
+                // Prevent duplicate processing
+                if (isProcessingToolRef.current) {
+                    console.log('Already processing a tool call, skipping')
+                    break
+                }
+                isProcessingToolRef.current = true
+
                 const callId = data.call_id
                 const toolName = data.name
                 const argsJson = data.arguments
 
                 console.log(`Tool call: ${toolName}`, argsJson)
 
-                // Start hold music while we wait for the backend
-                startMusic()
-
                 // Forward to interceptor
                 const result = await handleToolCall(callId, toolName, argsJson)
-
-                // Stop hold music — we have the result
-                stopMusic()
 
                 // Send tool result back to OpenAI
                 const dc = dcRef.current
@@ -231,15 +243,32 @@ function VoiceInterface({ channel, userId, onResponse }) {
                         type: 'response.create',
                     }))
                 }
+                
+                isProcessingToolRef.current = false
                 break;
             }
 
             case 'response.done':
                 console.log('Response done:', data.response)
+                isProcessingToolRef.current = false  // Reset tool processing flag
 
                 if (data.response?.status === 'failed') {
                     console.error('Response Failed Details:', JSON.stringify(data.response.status_details, null, 2))
                     logEvent('Response Failed', { details: data.response.status_details })
+                    
+                    // Retry on server errors - send a retry message
+                    const errorType = data.response?.status_details?.error?.type
+                    if (errorType === 'server_error') {
+                        console.log('Server error detected, retrying...')
+                        const dc = dcRef.current
+                        if (dc && dc.readyState === 'open') {
+                            // Small delay before retry
+                            await new Promise(resolve => setTimeout(resolve, 500))
+                            dc.send(JSON.stringify({
+                                type: 'response.create',
+                            }))
+                        }
+                    }
                 } else {
                     logEvent('Response Done', { status: data.response?.status })
                 }
@@ -281,9 +310,58 @@ function VoiceInterface({ channel, userId, onResponse }) {
             const tokenData = await tokenRes.json()
             const ephemeralToken = tokenData.ephemeral_token
 
-            // 2. Get microphone access
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            // 2. Get microphone access with optimized audio settings
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    sampleRate: 24000,  // OpenAI Realtime uses 24kHz
+                    channelCount: 1
+                } 
+            })
             streamRef.current = stream
+            
+            // 2.5 Apply additional noise filtering using Web Audio API
+            const audioContext = new AudioContext({ sampleRate: 24000 })
+            const source = audioContext.createMediaStreamSource(stream)
+            
+            // High-pass filter to remove low-frequency rumble/background noise
+            const highPassFilter = audioContext.createBiquadFilter()
+            highPassFilter.type = 'highpass'
+            highPassFilter.frequency.value = 100  // Cut frequencies below 100Hz
+            highPassFilter.Q.value = 0.7
+            
+            // Low-pass filter to remove high-frequency hiss
+            const lowPassFilter = audioContext.createBiquadFilter()
+            lowPassFilter.type = 'lowpass'
+            lowPassFilter.frequency.value = 8000  // Cut frequencies above 8kHz
+            lowPassFilter.Q.value = 0.7
+            
+            // Compressor to normalize volume and reduce sudden loud noises
+            const compressor = audioContext.createDynamicsCompressor()
+            compressor.threshold.value = -30
+            compressor.knee.value = 20
+            compressor.ratio.value = 8
+            compressor.attack.value = 0.003
+            compressor.release.value = 0.25
+            
+            // Gate to cut audio below threshold (removes quiet background noise)
+            const gateGain = audioContext.createGain()
+            gateGain.gain.value = 1.0
+            
+            // Connect the audio processing chain
+            source.connect(highPassFilter)
+            highPassFilter.connect(lowPassFilter)
+            lowPassFilter.connect(compressor)
+            compressor.connect(gateGain)
+            
+            // Create processed stream for WebRTC
+            const destination = audioContext.createMediaStreamDestination()
+            gateGain.connect(destination)
+            
+            const processedStream = destination.stream
+            audioContextRef.current = audioContext
 
             // 3. Create RTCPeerConnection
             const pc = new RTCPeerConnection()
@@ -298,14 +376,17 @@ function VoiceInterface({ channel, userId, onResponse }) {
             pc.ontrack = (e) => {
                 console.log('Got remote audio track', e.streams[0])
                 audioEl.srcObject = e.streams[0]
+                // Set audio properties for smoother playback
+                audioEl.volume = 1.0
+                audioEl.playbackRate = 1.0
                 audioEl.play().catch(err => {
                     console.warn('Audio autoplay blocked, will retry on next interaction:', err)
                 })
             }
 
-            // 5. Add microphone track
-            stream.getTracks().forEach(track => {
-                pc.addTrack(track, stream)
+            // 5. Add processed microphone track (with noise filtering)
+            processedStream.getTracks().forEach(track => {
+                pc.addTrack(track, processedStream)
             })
 
             // 6. Create data channel for events
@@ -404,6 +485,11 @@ function VoiceInterface({ channel, userId, onResponse }) {
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(t => t.stop())
             streamRef.current = null
+        }
+        
+        if (audioContextRef.current) {
+            audioContextRef.current.close().catch(() => {})
+            audioContextRef.current = null
         }
 
         if (audioElRef.current) {

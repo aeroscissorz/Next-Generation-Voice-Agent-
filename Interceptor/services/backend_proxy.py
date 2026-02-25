@@ -5,7 +5,7 @@ Handles all communication with the Backend service
 
 import httpx
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, AsyncGenerator
 from fastapi import HTTPException
 
 from utils.config import config
@@ -19,6 +19,7 @@ class BackendProxy:
     def __init__(self):
         self.backend_url = config.BACKEND_URL
         self.timeout = config.TIMEOUT_SECONDS
+        self._client = httpx.AsyncClient(timeout=self.timeout)
     
     async def request(
         self, 
@@ -45,8 +46,7 @@ class BackendProxy:
         logger.info(f"Backend request: {method} {target_url}")
         
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.request(method, target_url, json=payload)
+            response = await self._client.request(method, target_url, json=payload)
         except httpx.HTTPError as exc:
             logger.error(f"Backend unavailable: {exc}")
             raise HTTPException(
@@ -129,6 +129,54 @@ class BackendProxy:
             Backend health status
         """
         return await self.request("GET", "/")
+    
+    async def chat_stream(
+        self,
+        message: str,
+        user_id: str,
+        name: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """
+        Stream chat response from Backend.
+        """
+        target_url = f"{self.backend_url}/chat/stream"
+        payload = {
+            "message": message,
+            "user_id": user_id,
+        }
+        if name:
+            payload["name"] = name
+        
+        logger.info(f"Backend stream request: POST {target_url}")
+        
+        try:
+            async with self._client.stream("POST", target_url, json=payload) as response:
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        yield line + "\n\n"
+        except httpx.HTTPError as exc:
+            logger.error(f"Backend stream error: {exc}")
+            yield f"data: {{\"error\": \"{exc}\", \"done\": true}}\n\n"
+
+    async def chat_fast(
+        self,
+        message: str,
+        user_id: str,
+        tool_data: dict,
+        name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Fast-path: send pre-fetched tool data to backend for single LLM formatting.
+        """
+        payload = {
+            "message": message,
+            "user_id": user_id,
+            "tool_data": tool_data,
+        }
+        if name:
+            payload["name"] = name
+
+        return await self.request("POST", "/chat/fast", payload)
 
 
 # Create singleton instance

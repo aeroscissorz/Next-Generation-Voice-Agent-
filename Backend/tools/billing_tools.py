@@ -2,8 +2,28 @@ import os
 from supabase import create_client
 from dotenv import load_dotenv
 from datetime import datetime
+import time
 
 load_dotenv(override=True)
+
+_supabase = None
+_query_cache: dict[str, tuple[float, any]] = {}
+QUERY_CACHE_TTL = 300  # 5 minutes for billing data
+
+def _cache_get(key: str):
+    """Get from cache if not expired."""
+    if key in _query_cache:
+        cached_time, data = _query_cache[key]
+        if time.time() - cached_time < QUERY_CACHE_TTL:
+            return data
+    return None
+
+def _cache_set(key: str, data):
+    """Store in cache."""
+    _query_cache[key] = (time.time(), data)
+    if len(_query_cache) > 200:
+        oldest = next(iter(_query_cache))
+        del _query_cache[oldest]
 
 _supabase = None
 
@@ -21,9 +41,12 @@ def get_supabase():
 
 
 def get_user_invoices(user_id: str):
+    cached = _cache_get(f"invoices:{user_id}")
+    if cached is not None:
+        return cached
     try:
         supabase = get_supabase()
-        return (
+        data = (
             supabase
             .table("invoices")
             .select("*")
@@ -32,9 +55,29 @@ def get_user_invoices(user_id: str):
             .data
             or []
         )
+        _cache_set(f"invoices:{user_id}", data)
+
+        # Prefetch breakdowns for all invoices so follow-up queries are instant
+        for inv in data:
+            inv_id = str(inv.get("invoice_id", ""))
+            if inv_id and _cache_get(f"breakdown:{inv_id}") is None:
+                try:
+                    bd = (
+                        supabase
+                        .table("invoice_breakdown")
+                        .select("*")
+                        .eq("invoice_id", inv_id)
+                        .execute()
+                        .data or []
+                    )
+                    _cache_set(f"breakdown:{inv_id}", bd)
+                    print(f"⚡ Prefetched breakdown for invoice {inv_id}")
+                except Exception:
+                    pass  # Non-critical, skip silently
+
+        return data
     except Exception as e:
         print(f"Error fetching invoices: {e}")
-        # Return mock data for demo purposes
         return [{
             "invoice_id": "INV-001",
             "user_id": user_id,
@@ -63,9 +106,12 @@ def get_payment_methods(user_id: str):
 
 
 def get_user_invoices_breakdown(invoice_id: str):
+    cached = _cache_get(f"breakdown:{invoice_id}")
+    if cached is not None:
+        return cached
     try:
         supabase = get_supabase()
-        return (
+        data = (
             supabase
             .table("invoice_breakdown")
             .select("*")
@@ -74,6 +120,8 @@ def get_user_invoices_breakdown(invoice_id: str):
             .data
             or []
         )
+        _cache_set(f"breakdown:{invoice_id}", data)
+        return data
     except Exception as e:
         print(f"Error fetching invoice breakdown: {e}")
         # Return mock breakdown
@@ -89,9 +137,12 @@ def get_user_invoices_breakdown(invoice_id: str):
 
 
 def check_roaming_status(user_id: str):
+    cached = _cache_get(f"roaming:{user_id}")
+    if cached is not None:
+        return cached
     try:
         supabase = get_supabase()
-        return (
+        data = (
             supabase
             .table("roaming")
             .select("*")
@@ -100,6 +151,8 @@ def check_roaming_status(user_id: str):
             .data
             or []
         )
+        _cache_set(f"roaming:{user_id}", data)
+        return data
     except Exception as e:
         print(f"Error checking roaming status: {e}")
         return []

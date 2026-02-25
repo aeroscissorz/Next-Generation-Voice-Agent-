@@ -1,25 +1,25 @@
 """
-Interceptor Service - Refactored
+Interceptor Service
 Channel-specific middleware for message processing and formatting
 """
 
 import json
 import logging
+import time
 from typing import Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
     datefmt="%H:%M:%S"
 )
 
-# Import from our organized modules
 from utils import (
     config,
     inject_chat_context,
@@ -29,23 +29,18 @@ from utils import (
     normalize_to_text,
     load_system_instructions,
     extract_user_id_from_spoken,
-    # Models
     ChatRequest,
     NewSessionRequest,
     ToolCallRequest,
-    # Tools
     VOICE_TOOLS,
 )
-from services import (
-    backend_proxy,
-    init_voice_auth_service,
-)
+from utils.intent_detector import detect_intent
+from services import backend_proxy, init_voice_auth_service
+from services.tool_executor import ToolExecutor
 
-# Initialize FastAPI app
 app = FastAPI(title="Chat Interceptor")
 logger = logging.getLogger("interceptor")
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -64,126 +59,202 @@ if config.SUPABASE_URL and config.SUPABASE_SERVICE_KEY:
     except Exception as e:
         logger.error(f"Failed to initialize Supabase: {e}")
 
-# Initialize voice auth service
 _voice_auth = init_voice_auth_service(supabase)
-
-# Load voice system instructions
+_tool_executor = ToolExecutor(supabase)
 VOICE_SYSTEM_INSTRUCTIONS = load_system_instructions(config.VOICE_INSTRUCTIONS_PATH)
 
+# Accumulate fast-path exchanges per user so follow-ups have full context
+# Format: {user_id: [{"user_msg": "...", "agent_reply": "..."}, ...]}
+_fast_path_history: dict[str, list] = {}
+_MAX_HISTORY = 5  # Keep last 5 exchanges
 
-# ---------------------------------------------------------------------------
-# Chat Endpoints
-# ---------------------------------------------------------------------------
+
+# --- Chat Endpoints ---
 
 @app.get("/")
 async def health():
-    """Health check - proxies to Backend"""
     return await backend_proxy.health_check()
 
 
 @app.options("/chat")
 async def chat_options():
-    """CORS preflight for chat endpoint"""
     return {"status": "ok"}
-
-
-@app.post("/debug/injection")
-async def debug_injection(req: ChatRequest):
-    """Debug endpoint to see what context injection looks like"""
-    enhanced = inject_chat_context(req.message, req.user_id, req.name)
-    return {
-        "original": req.message,
-        "injected": enhanced,
-        "user_id": req.user_id,
-        "name": req.name
-    }
-
-
-@app.post("/debug/voice-injection")
-async def debug_voice_injection(req: ChatRequest):
-    """Debug endpoint to see voice context injection"""
-    # Simulate authenticated voice user
-    enhanced_auth = inject_voice_context(req.message, req.user_id, is_authenticated=True)
-    # Simulate unauthenticated voice user
-    enhanced_unauth = inject_voice_context(req.message, req.user_id, is_authenticated=False)
-    return {
-        "original": req.message,
-        "injected_authenticated": enhanced_auth,
-        "injected_unauthenticated": enhanced_unauth,
-        "user_id": req.user_id
-    }
 
 
 @app.post("/new-session")
 async def new_session(req: NewSessionRequest):
-    """Create new session - proxies to Backend"""
-    return await backend_proxy.new_session(req.user_id, req.name)
+    result = await backend_proxy.new_session(req.user_id, req.name)
+
+    # Prefetch user data in background to warm caches
+    import asyncio
+    asyncio.create_task(_prefetch_user(req.user_id))
+
+    return result
+
+
+async def _prefetch_user(user_id: str):
+    """Background task: warm Interceptor + Backend caches for this user."""
+    try:
+        _tool_executor.prefetch_user_data(user_id)
+        # Also warm the Backend's caches via a lightweight call
+        await backend_proxy.request("POST", "/prefetch", {"user_id": user_id})
+    except Exception as e:
+        logger.warning(f"Background prefetch failed: {e}")
 
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
-    """
-    Process chat message with context injection and formatting.
-    
-    Flow:
-    1. Inject chat-specific context
-    2. Forward to Backend
-    3. Format response for chat (markdown)
-    4. Return formatted response
-    """
-    # Inject chat-specific context (includes USER_ID, USER_NAME, and channel context)
-    enhanced_message = inject_chat_context(req.message, req.user_id, req.name)
-    
-    logger.info(f"Chat request: user_id={req.user_id}, message_len={len(req.message)}")
-    
-    # Forward to Backend with enhanced message
-    backend_response = await backend_proxy.chat(
-        message=enhanced_message,
-        user_id=req.user_id,
-        name=req.name
+    # Try fast-path first
+    intent = detect_intent(req.message, req.user_id)
+    if intent:
+        tool_name, tool_args = intent
+        tool_data = _tool_executor.execute(tool_name, tool_args)
+        if tool_data is not None:
+            if hasattr(_tool_executor, '_prefetched_breakdowns'):
+                _tool_executor._prefetched_breakdowns = {}
+
+            logger.info(f"⚡ Fast-path (non-stream): {tool_name} for user {req.user_id}")
+            try:
+                start = time.time()
+                response = await backend_proxy.chat_fast(
+                    message=req.message, user_id=req.user_id,
+                    tool_data={tool_name: tool_data}, name=req.name,
+                )
+                elapsed = time.time() - start
+                logger.info(f"⚡ Fast-path total: {elapsed:.2f}s")
+
+                if not response.get("fast_path_error"):
+                    raw_reply = normalize_to_text(response.get("reply", ""))
+                    formatted = normalize_to_text(format_reply_for_chat(raw_reply)) or raw_reply
+                    # Accumulate for follow-up context
+                    _fast_path_history.setdefault(req.user_id, []).append({
+                        "user_msg": req.message,
+                        "agent_reply": raw_reply,
+                    })
+                    if len(_fast_path_history[req.user_id]) > _MAX_HISTORY:
+                        _fast_path_history[req.user_id] = _fast_path_history[req.user_id][-_MAX_HISTORY:]
+                    return {"reply": formatted, "raw_reply": raw_reply, "user_name": req.name}
+            except Exception as e:
+                logger.warning(f"Fast-path failed, falling back: {e}")
+
+    # Normal path — inject prior fast-path history if available
+    history = _fast_path_history.pop(req.user_id, None)
+    context_prefix = ""
+    if history:
+        lines = []
+        for ex in history:
+            lines.append(f"User: {ex['user_msg']}")
+            lines.append(f"Agent: {ex['agent_reply']}")
+        context_prefix = (
+            "[CONVERSATION SO FAR]\n"
+            + "\n".join(lines)
+            + "\n[END CONVERSATION]\n"
+        )
+
+    enhanced_message = inject_chat_context(
+        context_prefix + req.message, req.user_id, req.name
     )
-    
-    logger.info(f"Backend response type: {type(backend_response).__name__}")
-    
-    # Normalize response
+    logger.info(f"Chat request: user_id={req.user_id}, message_len={len(req.message)}")
+
+    backend_response = await backend_proxy.chat(
+        message=enhanced_message, user_id=req.user_id, name=req.name
+    )
+
     if not isinstance(backend_response, dict):
         backend_response = {"reply": str(backend_response)}
-    
-    # Extract reply
+
     raw_reply = normalize_to_text(backend_response.get("reply", ""))
     if not raw_reply:
         raw_reply = normalize_to_text(backend_response.get("detail", ""))
     if not raw_reply:
         raw_reply = "I'm here to help! How can I assist you today?"
-    
-    # Format for chat
-    formatted_reply = format_reply_for_chat(raw_reply)
-    formatted_reply = normalize_to_text(formatted_reply) or raw_reply
-    
-    logger.info(f"Response lengths: raw={len(raw_reply)}, formatted={len(formatted_reply)}")
-    logger.info(f"Formatted preview: {formatted_reply[:200].replace(chr(10), ' ')}")
-    
-    # Return formatted response
+
+    formatted_reply = normalize_to_text(format_reply_for_chat(raw_reply)) or raw_reply
+
     backend_response["raw_reply"] = raw_reply
     backend_response["reply"] = formatted_reply
     return backend_response
 
 
-# ---------------------------------------------------------------------------
-# Voice Endpoints
-# ---------------------------------------------------------------------------
+
+@app.post("/chat/stream")
+async def chat_stream(req: ChatRequest):
+    # Try fast-path: pattern match → direct tool call → single LLM formatting
+    intent = detect_intent(req.message, req.user_id)
+    if intent:
+        tool_name, tool_args = intent
+        tool_data = _tool_executor.execute(tool_name, tool_args)
+        if tool_data is not None:
+            if hasattr(_tool_executor, '_prefetched_breakdowns'):
+                _tool_executor._prefetched_breakdowns = {}
+
+            logger.info(f"⚡ Fast-path: {tool_name} for user {req.user_id}")
+            try:
+                start = time.time()
+                response = await backend_proxy.chat_fast(
+                    message=req.message, user_id=req.user_id,
+                    tool_data={tool_name: tool_data}, name=req.name,
+                )
+                elapsed = time.time() - start
+                logger.info(f"⚡ Fast-path total: {elapsed:.2f}s")
+
+                if not response.get("fast_path_error"):
+                    raw_reply = normalize_to_text(response.get("reply", ""))
+                    formatted = normalize_to_text(format_reply_for_chat(raw_reply)) or raw_reply
+                    # Accumulate for follow-up context
+                    _fast_path_history.setdefault(req.user_id, []).append({
+                        "user_msg": req.message,
+                        "agent_reply": raw_reply,
+                    })
+                    if len(_fast_path_history[req.user_id]) > _MAX_HISTORY:
+                        _fast_path_history[req.user_id] = _fast_path_history[req.user_id][-_MAX_HISTORY:]
+
+                    async def fast_generate():
+                        yield f"data: {json.dumps({'text': formatted, 'done': True})}\n\n"
+
+                    return StreamingResponse(
+                        fast_generate(),
+                        media_type="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+                    )
+            except Exception as e:
+                logger.warning(f"Fast-path failed, falling back: {e}")
+
+    # Normal path — inject prior fast-path history if available
+    history = _fast_path_history.pop(req.user_id, None)
+    context_prefix = ""
+    if history:
+        lines = []
+        for ex in history:
+            lines.append(f"User: {ex['user_msg']}")
+            lines.append(f"Agent: {ex['agent_reply']}")
+        context_prefix = (
+            "[CONVERSATION SO FAR]\n"
+            + "\n".join(lines)
+            + "\n[END CONVERSATION]\n"
+        )
+
+    enhanced_message = inject_chat_context(
+        context_prefix + req.message, req.user_id, req.name
+    )
+
+    async def generate():
+        async for chunk in backend_proxy.chat_stream(
+            message=enhanced_message, user_id=req.user_id, name=req.name
+        ):
+            yield chunk
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
+
+
+# --- Voice Endpoints ---
 
 @app.get("/voice/token")
 async def get_voice_token(user_id: str = Query(..., description="User identifier")):
-    """
-    Generate ephemeral token for OpenAI Realtime API.
-    
-    Args:
-        user_id: User identifier (email)
-    
-    Returns:
-        Ephemeral token and session configuration
-    """
     if not config.OPENAI_API_KEY:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured")
 
@@ -200,15 +271,13 @@ async def get_voice_token(user_id: str = Query(..., description="User identifier
                     "modalities": ["text", "audio"],
                     "voice": "coral",
                     "instructions": VOICE_SYSTEM_INSTRUCTIONS,
-                    "input_audio_transcription": {
-                        "model": "whisper-1"
-                    },
+                    "input_audio_transcription": {"model": "whisper-1"},
                     "tools": VOICE_TOOLS,
                     "turn_detection": {
                         "type": "server_vad",
-                        "threshold": 0.5,
-                        "prefix_padding_ms": 300,
-                        "silence_duration_ms": 1000,
+                        "threshold": 0.75,
+                        "prefix_padding_ms": 200,
+                        "silence_duration_ms": 500,
                     },
                 },
             )
@@ -216,14 +285,9 @@ async def get_voice_token(user_id: str = Query(..., description="User identifier
         if response.status_code >= 400:
             error_body = response.text
             logger.error(f"OpenAI session creation failed: {response.status_code} {error_body}")
-            raise HTTPException(
-                status_code=502,
-                detail=f"OpenAI API error ({response.status_code}): {error_body[:300]}",
-            )
+            raise HTTPException(status_code=502, detail=f"OpenAI API error ({response.status_code}): {error_body[:300]}")
 
         session_data = response.json()
-
-        # Extract ephemeral token
         client_secret = session_data.get("client_secret", {})
         ephemeral_token = client_secret.get("value", "") if isinstance(client_secret, dict) else ""
 
@@ -231,7 +295,8 @@ async def get_voice_token(user_id: str = Query(..., description="User identifier
             logger.error(f"No ephemeral token in response: {json.dumps(session_data)[:500]}")
             raise HTTPException(status_code=502, detail="No ephemeral token returned by OpenAI")
 
-        # Reset auth state for new session
+        # Reset auth only on fresh connections (new voice session)
+        # This ensures user must re-authenticate when starting a new call
         _voice_auth.reset_auth(user_id)
 
         return {
@@ -249,13 +314,6 @@ async def get_voice_token(user_id: str = Query(..., description="User identifier
 
 @app.post("/voice/tool-call")
 async def handle_voice_tool_call(req: ToolCallRequest):
-    """
-    Handle tool calls from OpenAI Realtime session.
-    
-    Tools:
-    - validate_user: Validate user ID against database
-    - forward_to_backend: Forward query to Backend
-    """
     logger.info(f"Voice tool call: name={req.tool_name}, user_id={req.user_id}, call_id={req.call_id}")
 
     if req.tool_name == "validate_user":
@@ -263,29 +321,12 @@ async def handle_voice_tool_call(req: ToolCallRequest):
     elif req.tool_name == "forward_to_backend":
         return await _handle_forward_to_backend(req)
     else:
-        return {
-            "call_id": req.call_id,
-            "result": json.dumps({"error": f"Unknown tool: {req.tool_name}"})
-        }
+        return {"call_id": req.call_id, "result": json.dumps({"error": f"Unknown tool: {req.tool_name}"})}
 
-
-# ---------------------------------------------------------------------------
-# Tool Call Request functions
-# ---------------------------------------------------------------------------
 
 async def _handle_validate_user(req: ToolCallRequest) -> dict:
-    """
-    Validate user identity against Supabase database.
-    
-    Args:
-        req: Tool call request with user_id argument
-    
-    Returns:
-        Validation result
-    """
     raw_user_id = req.arguments.get("user_id", "").strip()
     spoken_user_id = extract_user_id_from_spoken(raw_user_id)
-    
     logger.info(f"Validating user: raw='{raw_user_id}', normalized='{spoken_user_id}'")
 
     if not spoken_user_id:
@@ -293,101 +334,62 @@ async def _handle_validate_user(req: ToolCallRequest) -> dict:
             "call_id": req.call_id,
             "result": json.dumps({
                 "authenticated": False,
-                "reason": "No user ID provided"
+                "reason": "No user ID provided",
+                "message": "No valid user ID could be extracted from the input."
             }),
         }
 
-    # Validate against database
     authenticated, customer_id, message = await _voice_auth.validate_user_id(spoken_user_id)
-    
+
     if authenticated and customer_id:
-        # Mark user as authenticated
         _voice_auth.set_authenticated(req.user_id, customer_id)
-        
         return {
             "call_id": req.call_id,
-            "result": json.dumps({
-                "authenticated": True,
-                "customer_id": customer_id,
-                "message": message
-            }),
+            "result": json.dumps({"authenticated": True, "customer_id": customer_id, "message": message}),
         }
     else:
         return {
             "call_id": req.call_id,
-            "result": json.dumps({
-                "authenticated": False,
-                "reason": "User ID not found",
-                "message": message
-            }),
+            "result": json.dumps({"authenticated": False, "reason": message or "Validation failed", "message": message}),
         }
 
 
 async def _handle_forward_to_backend(req: ToolCallRequest) -> dict:
-    """
-    Forward user query to Backend with voice context injection.
-    
-    Args:
-        req: Tool call request with message argument
-    
-    Returns:
-        Backend response formatted for voice
-    """
+    start_total = time.time()
+
     user_message = req.arguments.get("message", "")
     if not user_message:
-        return {
-            "call_id": req.call_id,
-            "result": json.dumps({"error": "No message provided"}),
-        }
+        return {"call_id": req.call_id, "result": json.dumps({"error": "No message provided"})}
 
-    # Check authentication
     if not _voice_auth.is_authenticated(req.user_id):
         return {
             "call_id": req.call_id,
-            "result": json.dumps({
-                "error": "User not authenticated. Please ask for their User ID first and call validate_user."
-            }),
+            "result": json.dumps({"error": "User not authenticated. Please ask for their User ID first and call validate_user."}),
         }
 
-    # Get validated customer ID
     customer_id = _voice_auth.get_customer_id(req.user_id) or req.user_id
-    
-    # Inject voice-specific context
     enhanced_message = inject_voice_context(user_message, customer_id, is_authenticated=True)
 
     try:
-        # Forward to Backend
-        backend_response = await backend_proxy.chat(
-            message=enhanced_message,
-            user_id=customer_id
-        )
+        start_backend = time.time()
+        backend_response = await backend_proxy.chat(message=enhanced_message, user_id=customer_id)
+        backend_time = time.time() - start_backend
+        logger.info(f"⏱️ Backend took: {backend_time:.2f}s")
 
-        # Extract reply
         raw_reply = normalize_to_text(
-            backend_response.get("reply", "") if isinstance(backend_response, dict)
-            else str(backend_response)
+            backend_response.get("reply", "") if isinstance(backend_response, dict) else str(backend_response)
         )
         if not raw_reply:
             raw_reply = "I couldn't get that information right now."
 
-        # Format for voice
-        voice_reply = format_reply_for_voice(raw_reply)
-        voice_reply = normalize_to_text(voice_reply) or raw_reply
+        voice_reply = normalize_to_text(format_reply_for_voice(raw_reply)) or raw_reply
 
-        return {
-            "call_id": req.call_id,
-            "result": json.dumps({"response": voice_reply}),
-        }
+        total_time = time.time() - start_total
+        logger.info(f"⏱️ TOTAL forward_to_backend: {total_time:.2f}s")
+
+        return {"call_id": req.call_id, "result": json.dumps({"response": voice_reply})}
     except HTTPException:
-        return {
-            "call_id": req.call_id,
-            "result": json.dumps({
-                "error": "Sorry, I'm having trouble reaching the support system right now."
-            }),
-        }
+        return {"call_id": req.call_id, "result": json.dumps({"error": "Sorry, I'm having trouble reaching the support system right now."})}
     except Exception as exc:
         logger.exception("forward_to_backend failed")
-        return {
-            "call_id": req.call_id,
-            "result": json.dumps({"error": f"Backend error: {exc}"}),
-        }
+        return {"call_id": req.call_id, "result": json.dumps({"error": f"Backend error: {exc}"})}

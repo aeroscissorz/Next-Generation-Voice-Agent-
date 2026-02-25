@@ -7,7 +7,7 @@ import CustomScrollbar from '../components/CustomScrollbar'
 import Sidebar from '../components/Sidebar'
 import VoiceInterface from '../components/VoiceInterface'
 import MessageContent from '../components/MessageContent'
-import { processMessage } from '../services/interceptor'
+import { processMessage, processMessageStream } from '../services/interceptor'
 import { createNewSession } from '../api/chatApi'
 
 function ChatSession() {
@@ -99,26 +99,51 @@ function ChatSession() {
             setMessage("")
             setIsLoading(true)
 
-            // Process message through interceptor for text channel formatting
-            const result = await processMessage(
+            // Process message with streaming
+            await processMessageStream(
                 'chat',
                 { text: currentMessage },
                 user.user_id,
-                {},
+                // onChunk - intermediate text updates (partial streaming)
+                (text) => {
+                    setResponses(prev => {
+                        const newResponses = [...prev]
+                        const lastIdx = newResponses.length - 1
+                        // Update existing streaming message or add new one
+                        if (lastIdx >= 0 && newResponses[lastIdx].isStreaming) {
+                            newResponses[lastIdx] = { role: 'agent', text, isStreaming: true }
+                        } else {
+                            newResponses.push({ role: 'agent', text, isStreaming: true })
+                        }
+                        return newResponses
+                    })
+                },
+                // onDone - final response
+                (finalText) => {
+                    setResponses(prev => {
+                        const newResponses = [...prev]
+                        const lastIdx = newResponses.length - 1
+                        // Replace streaming message or add final message
+                        if (lastIdx >= 0 && newResponses[lastIdx].isStreaming) {
+                            newResponses[lastIdx] = { role: 'agent', text: finalText, isStreaming: false }
+                        } else {
+                            newResponses.push({ role: 'agent', text: finalText, isStreaming: false })
+                        }
+                        return newResponses
+                    })
+                },
                 user.name || user.email.split('@')[0]
             )
-
-            // Add agent response (already formatted by interceptor)
-            setResponses(prev => [
-                ...prev,
-                { role: "agent", text: result.message }
-            ])
         } catch (error) {
             console.error("Error sending message:", error)
-            setResponses(prev => [
-                ...prev,
-                { role: "agent", text: "Sorry, there was an error processing your message. Please try again." }
-            ])
+            setResponses(prev => {
+                // Remove the streaming message and add error
+                const filtered = prev.filter(m => !m.isStreaming)
+                return [
+                    ...filtered,
+                    { role: "agent", text: "Sorry, there was an error processing your message. Please try again." }
+                ]
+            })
         } finally {
             setIsLoading(false)
         }
@@ -217,7 +242,7 @@ function ChatSession() {
                                     </div>
                                 </div>
                             ))}
-                            {isLoading && (
+                            {isLoading && !responses.some(m => m.isStreaming) && (
                                 <div className="flex justify-start">
                                     <div className="max-w-[70%] px-4 py-3 rounded-2xl text-sm bg-white/10 text-white rounded-bl-none">
                                         <div className="flex items-center gap-2">

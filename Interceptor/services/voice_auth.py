@@ -7,6 +7,8 @@ import logging
 from typing import Dict, Optional
 from supabase import Client
 
+from utils.helpers import USER_ID_MIN_LENGTH, USER_ID_MAX_LENGTH
+
 logger = logging.getLogger("voice_auth")
 
 
@@ -72,58 +74,73 @@ class VoiceAuthService:
     async def validate_user_id(self, spoken_user_id: str) -> tuple[bool, Optional[str], str]:
         """
         Validate user ID against Supabase database.
-        
+
         Args:
             spoken_user_id: User ID from speech recognition
-        
+
         Returns:
             Tuple of (authenticated, customer_id, message)
         """
+        # Log received ID and its length (requirement 4.3)
+        logger.info(f"validate_user_id: received user_id='{spoken_user_id}', length={len(spoken_user_id)}")
+
         if not self.supabase:
             logger.error("Supabase not initialized; cannot validate user")
+            logger.info("validate_user_id: outcome=failure, reason=supabase_not_initialized")
             return (
                 False, 
                 None, 
                 "System error: Validation service unavailable"
             )
-        
+
         # Ensure ID is numeric
         if not spoken_user_id.isdigit():
-            logger.info(f"Validation failed: User ID '{spoken_user_id}' is not numeric")
+            logger.info(f"validate_user_id: outcome=failure, reason=not_numeric, user_id='{spoken_user_id}'")
             return (
                 False,
                 None,
                 f"Invalid User ID format. I heard {spoken_user_id}, but IDs must be numeric."
             )
-        
+
+        # Length check before DB query (requirements 2.3, 2.4)
+        id_length = len(spoken_user_id)
+        if id_length < USER_ID_MIN_LENGTH or id_length > USER_ID_MAX_LENGTH:
+            msg = (
+                f"User ID must be between {USER_ID_MIN_LENGTH} and {USER_ID_MAX_LENGTH} digits. "
+                f"I heard {spoken_user_id} which is {id_length} digits."
+            )
+            logger.info(f"validate_user_id: outcome=failure, reason=invalid_length, length={id_length}")
+            return (False, None, msg)
+
         try:
             # Check if ID exists in 'users_voice' table
             response = self.supabase.table("users_voice")\
                 .select("user_id")\
                 .eq("user_id", spoken_user_id)\
                 .execute()
-            
+
             # Check if user found
             if not response.data or len(response.data) == 0:
-                logger.info(f"Validation failed for user_id={spoken_user_id} (not found in DB)")
+                logger.info(f"validate_user_id: outcome=failure, reason=not_found_in_db, user_id='{spoken_user_id}'")
                 return (
                     False,
                     None,
                     f"I heard {spoken_user_id}, but I couldn't find that ID. Could you try saying it digit by digit?"
                 )
-            
+
             # User found
             db_user_id = str(response.data[0]['user_id'])
-            logger.info(f"User validated successfully: {db_user_id}")
-            
+            logger.info(f"validate_user_id: outcome=success, user_id='{db_user_id}'")
+
             return (
                 True,
                 db_user_id,
                 "Thanks! I've confirmed your account. How can I help you today?"
             )
-            
+
         except Exception as exc:
             logger.exception("validate_user DB query failed")
+            logger.info(f"validate_user_id: outcome=failure, reason=db_exception")
             return (
                 False,
                 None,
