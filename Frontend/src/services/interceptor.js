@@ -58,7 +58,7 @@ export async function processMessage(channel, input, userId, callbacks = {}, use
  * @param {string} userName - Optional user name for personalization
  * @returns {Promise<void>}
  */
-export async function processMessageStream(channel, input, userId, onChunk, onDone, userName = null) {
+export async function processMessageStream(channel, input, userId, onChunk, onDone, userName = null, onStatus = null) {
   if (channel !== 'chat') {
     throw new Error('Streaming only supported for chat channel')
   }
@@ -70,6 +70,7 @@ export async function processMessageStream(channel, input, userId, onChunk, onDo
     userId,
     { name: userName },
     onChunk,
-    onDone
+    onDone,
+    onStatus
   )
 }

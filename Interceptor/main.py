@@ -36,7 +36,6 @@ from utils import (
 )
 from utils.intent_detector import detect_intent
 from services import backend_proxy, init_voice_auth_service
-from services.tool_executor import ToolExecutor
 
 app = FastAPI(title="Chat Interceptor")
 logger = logging.getLogger("interceptor")
@@ -60,13 +59,7 @@ if config.SUPABASE_URL and config.SUPABASE_SERVICE_KEY:
         logger.error(f"Failed to initialize Supabase: {e}")
 
 _voice_auth = init_voice_auth_service(supabase)
-_tool_executor = ToolExecutor(supabase)
 VOICE_SYSTEM_INSTRUCTIONS = load_system_instructions(config.VOICE_INSTRUCTIONS_PATH)
-
-# Accumulate fast-path exchanges per user so follow-ups have full context
-# Format: {user_id: [{"user_msg": "...", "agent_reply": "..."}, ...]}
-_fast_path_history: dict[str, list] = {}
-_MAX_HISTORY = 5  # Keep last 5 exchanges
 
 
 # --- Chat Endpoints ---
@@ -104,55 +97,8 @@ async def _prefetch_user(user_id: str):
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
-    # Try fast-path first
-    intent = detect_intent(req.message, req.user_id)
-    if intent:
-        tool_name, tool_args = intent
-        tool_data = _tool_executor.execute(tool_name, tool_args)
-        if tool_data is not None:
-            if hasattr(_tool_executor, '_prefetched_breakdowns'):
-                _tool_executor._prefetched_breakdowns = {}
-
-            logger.info(f"⚡ Fast-path (non-stream): {tool_name} for user {req.user_id}")
-            try:
-                start = time.time()
-                response = await backend_proxy.chat_fast(
-                    message=req.message, user_id=req.user_id,
-                    tool_data={tool_name: tool_data}, name=req.name,
-                )
-                elapsed = time.time() - start
-                logger.info(f"⚡ Fast-path total: {elapsed:.2f}s")
-
-                if not response.get("fast_path_error"):
-                    raw_reply = normalize_to_text(response.get("reply", ""))
-                    formatted = normalize_to_text(format_reply_for_chat(raw_reply)) or raw_reply
-                    # Accumulate for follow-up context
-                    _fast_path_history.setdefault(req.user_id, []).append({
-                        "user_msg": req.message,
-                        "agent_reply": raw_reply,
-                    })
-                    if len(_fast_path_history[req.user_id]) > _MAX_HISTORY:
-                        _fast_path_history[req.user_id] = _fast_path_history[req.user_id][-_MAX_HISTORY:]
-                    return {"reply": formatted, "raw_reply": raw_reply, "user_name": req.name}
-            except Exception as e:
-                logger.warning(f"Fast-path failed, falling back: {e}")
-
-    # Normal path — inject prior fast-path history if available
-    history = _fast_path_history.pop(req.user_id, None)
-    context_prefix = ""
-    if history:
-        lines = []
-        for ex in history:
-            lines.append(f"User: {ex['user_msg']}")
-            lines.append(f"Agent: {ex['agent_reply']}")
-        context_prefix = (
-            "[CONVERSATION SO FAR]\n"
-            + "\n".join(lines)
-            + "\n[END CONVERSATION]\n"
-        )
-
     enhanced_message = inject_chat_context(
-        context_prefix + req.message, req.user_id, req.name
+        req.message, req.user_id, req.name
     )
     logger.info(f"Chat request: user_id={req.user_id}, message_len={len(req.message)}")
 
@@ -179,63 +125,8 @@ async def chat(req: ChatRequest):
 
 @app.post("/chat/stream")
 async def chat_stream(req: ChatRequest):
-    # Try fast-path: pattern match → direct tool call → single LLM formatting
-    intent = detect_intent(req.message, req.user_id)
-    if intent:
-        tool_name, tool_args = intent
-        tool_data = _tool_executor.execute(tool_name, tool_args)
-        if tool_data is not None:
-            if hasattr(_tool_executor, '_prefetched_breakdowns'):
-                _tool_executor._prefetched_breakdowns = {}
-
-            logger.info(f"⚡ Fast-path: {tool_name} for user {req.user_id}")
-            try:
-                start = time.time()
-                response = await backend_proxy.chat_fast(
-                    message=req.message, user_id=req.user_id,
-                    tool_data={tool_name: tool_data}, name=req.name,
-                )
-                elapsed = time.time() - start
-                logger.info(f"⚡ Fast-path total: {elapsed:.2f}s")
-
-                if not response.get("fast_path_error"):
-                    raw_reply = normalize_to_text(response.get("reply", ""))
-                    formatted = normalize_to_text(format_reply_for_chat(raw_reply)) or raw_reply
-                    # Accumulate for follow-up context
-                    _fast_path_history.setdefault(req.user_id, []).append({
-                        "user_msg": req.message,
-                        "agent_reply": raw_reply,
-                    })
-                    if len(_fast_path_history[req.user_id]) > _MAX_HISTORY:
-                        _fast_path_history[req.user_id] = _fast_path_history[req.user_id][-_MAX_HISTORY:]
-
-                    async def fast_generate():
-                        yield f"data: {json.dumps({'text': formatted, 'done': True})}\n\n"
-
-                    return StreamingResponse(
-                        fast_generate(),
-                        media_type="text/event-stream",
-                        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-                    )
-            except Exception as e:
-                logger.warning(f"Fast-path failed, falling back: {e}")
-
-    # Normal path — inject prior fast-path history if available
-    history = _fast_path_history.pop(req.user_id, None)
-    context_prefix = ""
-    if history:
-        lines = []
-        for ex in history:
-            lines.append(f"User: {ex['user_msg']}")
-            lines.append(f"Agent: {ex['agent_reply']}")
-        context_prefix = (
-            "[CONVERSATION SO FAR]\n"
-            + "\n".join(lines)
-            + "\n[END CONVERSATION]\n"
-        )
-
     enhanced_message = inject_chat_context(
-        context_prefix + req.message, req.user_id, req.name
+        req.message, req.user_id, req.name
     )
 
     async def generate():

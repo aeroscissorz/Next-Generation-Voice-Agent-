@@ -21,6 +21,9 @@ We reduced average response times from **7–17 seconds** down to **3–5 second
 
 ### Two Request Paths
 
+> Fast-path entry: `Interceptor/main.py:108` (`/chat`) and `:183` (`/chat/stream`)
+> Normal-path fallback: `Interceptor/main.py:145` (`/chat`) and `:221` (`/chat/stream`)
+
 | | Fast Path | Normal Path |
 |---|---|---|
 | **LLM calls** | 1 (formatting only) | 2 (intent + formatting) |
@@ -438,3 +441,14 @@ User message                                    0ms
 4. **Memory usage** — All caches are in-memory (no Redis/external store). For a single-user demo this is fine. For production, would need distributed caching.
 
 5. **Single Gemini model** — No fallback model if the primary is unavailable. The retry handles transient 503s, but a sustained outage would degrade to error responses.
+
+---
+
+## Appendix: Voice UX Tuning
+
+> **Code**: `Interceptor/main.py:283-287` — VAD parameters in `/voice/token`
+
+Server VAD parameters tuned to reduce false triggers and improve turn-taking:
+- `threshold: 0.75` (up from default ~0.5 — reduces background noise triggers)
+- `silence_duration_ms: 500` (shorter pause before end-of-turn detection)
+- `prefix_padding_ms: 200` (captures speech onset more reliably)

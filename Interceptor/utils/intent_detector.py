@@ -68,6 +68,13 @@ def detect_intent(message: str, user_id: str):
 
     # 2. Compound intents — "why is bill high", "bill breakdown", etc.
     #    These need invoices + breakdowns, handled as "bill_explain"
+
+    # Catch implicit bill references: "why was jan high", "why is december so expensive"
+    MONTHS = r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+    if re.search(rf"\b(why|how come).*{MONTHS}.*(high|increase|more|expensive)", msg):
+        logger.info(f"⚡ Fast-path match: 'bill_explain' (month ref) for: '{message[:50]}'")
+        return "bill_explain", {"user_id": user_id}
+
     if re.search(r"\b(why|how come).*(bill|invoice|charge).*(high|increase|more|expensive)", msg):
         logger.info(f"⚡ Fast-path match: 'bill_explain' for: '{message[:50]}'")
         return "bill_explain", {"user_id": user_id}

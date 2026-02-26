@@ -97,7 +97,7 @@ export const createNewSession = async (userId, name = null) => {
  * @param {function} onDone - Callback when streaming is complete
  * @returns {Promise<void>}
  */
-export const sendChatMessageStream = async (message, userId, options = {}, onChunk, onDone) => {
+export const sendChatMessageStream = async (message, userId, options = {}, onChunk, onDone, onStatus) => {
   try {
     const { name = null } = options;
     const requestStart = performance.now();
@@ -138,6 +138,7 @@ export const sendChatMessageStream = async (message, userId, options = {}, onChu
               throw new Error(data.error);
             }
             if (data.status && !data.text) {
+              if (onStatus) onStatus(data.status);
               continue;
             }
             if (data.text) {

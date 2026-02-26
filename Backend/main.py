@@ -239,8 +239,22 @@ async def chat_stream(req: ChatRequest):
                 if event.content and event.content.parts:
                     for part in event.content.parts:
                         if hasattr(part, 'function_call') and part.function_call:
-                            tool_label = part.function_call.name.replace("_", " ")
-                            status_msg = json.dumps({"status": f"Looking up {tool_label}...", "done": False})
+                            tool_labels = {
+                                "get_user_invoices": "Fetching your invoices...",
+                                "get_user_invoices_breakdown": "Loading invoice breakdown...",
+                                "get_payment_methods": "Checking payment methods...",
+                                "check_roaming_status": "Checking roaming status...",
+                                "check_roaming_status_monthwise": "Checking roaming history...",
+                                "update_roaming_status_monthwise": "Updating roaming settings...",
+                                "check_wallet_amount_settlement": "Checking wallet balance...",
+                                "update_wallet_amount": "Updating wallet credit...",
+                                "create_wallet_entry": "Processing refund...",
+                                "get_open_tickets": "Loading support tickets...",
+                                "check_outage": "Checking for outages in your area...",
+                                "search_company_knowledge": "Searching knowledge base...",
+                            }
+                            label = tool_labels.get(part.function_call.name, f"Looking up {part.function_call.name.replace('_', ' ')}...")
+                            status_msg = json.dumps({"status": label, "done": False})
                             yield f"data: {status_msg}\n\n"
 
                 if event.is_final_response() and event.content and event.content.parts:

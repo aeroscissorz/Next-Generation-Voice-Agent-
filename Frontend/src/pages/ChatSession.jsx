@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { Settings as SettingsIcon, Send, Download, LogOut, MessageSquarePlus } from 'lucide-react'
 import Aurora from '../components/Aurora'
@@ -10,12 +10,65 @@ import MessageContent from '../components/MessageContent'
 import { processMessage, processMessageStream } from '../services/interceptor'
 import { createNewSession } from '../api/chatApi'
 
+function ThinkingIndicator({ liveStatus }) {
+    const phrases = [
+        "Thinking...",
+        "On it...",
+        "Just a moment...",
+        "Working on it...",
+    ]
+    const [idx, setIdx] = useState(0)
+    const [visible, setVisible] = useState(true)
+    const [show, setShow] = useState(false)
+
+    // Only appear after 2s — avoids flash for fast responses
+    useEffect(() => {
+        const delay = setTimeout(() => setShow(true), 2000)
+        return () => clearTimeout(delay)
+    }, [])
+
+    useEffect(() => {
+        if (liveStatus) return
+        const cycle = setInterval(() => {
+            setVisible(false)
+            setTimeout(() => {
+                setIdx(i => (i + 1) % phrases.length)
+                setVisible(true)
+            }, 300)
+        }, 2000)
+        return () => clearInterval(cycle)
+    }, [liveStatus])
+
+    const text = liveStatus || phrases[idx]
+
+    return (
+        <div className="flex justify-start">
+            <div className="max-w-[70%] px-4 py-3 rounded-2xl text-sm bg-white/10 text-white rounded-bl-none">
+                <div className="flex items-center gap-2 text-gray-400">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                    {show && (
+                        <span
+                            className="text-xs ml-1 transition-opacity duration-300"
+                            style={{ opacity: liveStatus ? 1 : visible ? 1 : 0 }}
+                        >
+                            {text}
+                        </span>
+                    )}
+                </div>
+            </div>
+        </div>
+    )
+}
+
 function ChatSession() {
     const navigate = useNavigate()
     const location = useLocation()
     const [message, setMessage] = useState('')
     const [responses, setResponses] = useState([])
     const [isLoading, setIsLoading] = useState(false)
+    const [statusMsg, setStatusMsg] = useState('')
     const [mode, setMode] = useState(location.state?.mode || 'chat') // Get mode from navigation state
     const chatEndRef = useRef(null)
     const orbColorsRef = useRef(["#FF6B6B", "#4ECDC4"])
@@ -31,6 +84,9 @@ function ChatSession() {
             return
         }
 
+        const user = JSON.parse(userData)
+        const name = user.name || user.email?.split('@')[0] || 'there'
+
         // Get initial message from location state
         const initialMessage = location.state?.initialMessage
         const initialResponse = location.state?.initialResponse
@@ -39,6 +95,11 @@ function ChatSession() {
             setResponses([
                 { role: "user", text: initialMessage },
                 { role: "agent", text: initialResponse }
+            ])
+        } else {
+            // AI speaks first
+            setResponses([
+                { role: "agent", text: `Hi ${name}! I'm your NextGen support assistant. How can I help you today?` }
             ])
         }
     }, [navigate, location.state])
@@ -54,6 +115,7 @@ function ChatSession() {
 
     const handleNewConversation = async () => {
         const user = JSON.parse(localStorage.getItem("user"))
+        const name = user.name || user.email?.split('@')[0] || 'there'
 
         try {
             setIsLoading(true)
@@ -64,13 +126,11 @@ function ChatSession() {
                 user.name || user.email.split('@')[0]
             )
 
-            // Clear chat history
             setResponses([])
             setMessage('')
 
-            // Optional: Show success message
             setResponses([
-                { role: "agent", text: "New conversation started! How can I help you today?" }
+                { role: "agent", text: `Hi ${name}! Starting fresh — what can I help you with?` }
             ])
         } catch (error) {
             console.error("Error creating new session:", error)
@@ -98,6 +158,7 @@ function ChatSession() {
             const currentMessage = message
             setMessage("")
             setIsLoading(true)
+            setStatusMsg('')
 
             // Process message with streaming
             await processMessageStream(
@@ -120,6 +181,7 @@ function ChatSession() {
                 },
                 // onDone - final response
                 (finalText) => {
+                    setStatusMsg('')
                     setResponses(prev => {
                         const newResponses = [...prev]
                         const lastIdx = newResponses.length - 1
@@ -132,7 +194,9 @@ function ChatSession() {
                         return newResponses
                     })
                 },
-                user.name || user.email.split('@')[0]
+                user.name || user.email.split('@')[0],
+                // onStatus - live tool activity
+                (status) => setStatusMsg(status)
             )
         } catch (error) {
             console.error("Error sending message:", error)
@@ -243,17 +307,8 @@ function ChatSession() {
                                 </div>
                             ))}
                             {isLoading && !responses.some(m => m.isStreaming) && (
-                                <div className="flex justify-start">
-                                    <div className="max-w-[70%] px-4 py-3 rounded-2xl text-sm bg-white/10 text-white rounded-bl-none">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                            <div ref={chatEndRef} />
+                                <ThinkingIndicator liveStatus={statusMsg} />
+                            )}                            <div ref={chatEndRef} />
                         </div>
                     </CustomScrollbar>
                 )}
