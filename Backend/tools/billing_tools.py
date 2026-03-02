@@ -204,6 +204,7 @@ def check_wallet_amount_settlement(user_id: str, invoice_id: str):
             .select("*")
             .eq("user_id", user_id)
             .eq("invoice_id", invoice_id)
+            .eq("settled", "No")
             .execute()
             .data
             or []
@@ -245,6 +246,84 @@ def update_wallet_amount(user_id: str, invoice_id: str):
                 "amount": "700",
                 "settled_date": datetime.now().strftime("%Y-%m-%d"),
                 "settled": "No"
+            })
+            .eq("user_id", user_id)
+            .eq("invoice_id", invoice_id)
+            .execute()
+            .data
+        )
+    except Exception as e:
+        print(f"Error updating wallet amount: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def make_payment(user_id: str, invoice_id: str):
+    try:
+        supabase = get_supabase()
+        return (
+            supabase
+            .table("invoices")
+            .update({
+                "status": "Paid",
+                "overdue_date": None,
+                "promise_date": None
+                })
+            .eq("user_id", user_id)
+            .eq("invoice_id", invoice_id)
+            .execute()
+            .data
+        )
+    except Exception as e:
+        print(f"Error updating paid status of invoice: {e}")
+        return {"success": False, "error": str(e)}
+    
+
+def set_promise_date(user_id: str, invoice_id: str, promise_date: datetime):
+    try:
+        supabase = get_supabase()
+        return (
+            supabase
+            .table("invoices")
+            .update({
+                "promise_date": promise_date.strftime("%Y-%m-%d"),
+            })
+            .eq("user_id", user_id)
+            .eq("invoice_id", invoice_id)
+            .execute()
+            .data
+        )
+    except Exception as e:
+        print(f"Error updating promise date of invoice: {e}")
+        return {"success": False, "error": str(e)}
+    
+
+def get_bill_overdue_date(user_id: str,invoice_id: str):
+    try:
+        supabase = get_supabase()
+        return (
+            supabase
+            .table("invoices")
+            .select("overdue_date")
+            .eq("user_id", user_id)
+            .eq("invoice_id", invoice_id)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as e:
+        print(f"Error checking check_bill_overdue_date: {e}")
+        return []
+
+
+def set_settle_wallet_amount(user_id: str, invoice_id: str):
+    try:
+        supabase = get_supabase()
+        return (
+            supabase
+            .table("wallet_amount")
+            .update({
+                "settled_date": datetime.now().strftime("%Y-%m-%d"),
+                "settled": "Yes"
             })
             .eq("user_id", user_id)
             .eq("invoice_id", invoice_id)

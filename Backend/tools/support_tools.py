@@ -55,3 +55,22 @@ def check_outage(area: str):
         print(f"Error checking outages: {e}")
         # Return no outages
         return []
+    
+
+def is_user_service_active(user_id: str):
+    try:
+        supabase = get_supabase()
+        res = (
+            supabase
+            .table("user_services")
+            .select("is_subscription_service_active")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return res.data or []
+    except Exception as e:
+        print(f"Error checking is_user_service_active: {e}")
+        # Return no outages
+        return []
+
+

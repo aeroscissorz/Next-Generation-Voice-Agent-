@@ -14,11 +14,16 @@ from tools.billing_tools import (
     check_wallet_amount_settlement,
     update_wallet_amount,
     create_wallet_entry,
+    make_payment,
+    set_promise_date,
+    get_bill_overdue_date,
+    set_settle_wallet_amount
 )
 
 from tools.support_tools import (
     get_open_tickets,
     check_outage,
+    is_user_service_active
 )
 
 from tools.knowledge_tools import search_company_knowledge
@@ -47,5 +52,10 @@ root_agent = LlmAgent(
         check_outage,
         # Knowledge
         search_company_knowledge,
+        make_payment,
+        set_promise_date,
+        get_bill_overdue_date,
+        is_user_service_active,
+        set_settle_wallet_amount
     ],
 )
