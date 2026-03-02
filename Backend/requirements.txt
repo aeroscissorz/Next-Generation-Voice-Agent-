@@ -5,3 +5,4 @@ faiss-cpu
 sentence-transformers
 langchain-text-splitters
 supabase
+python-dateutil

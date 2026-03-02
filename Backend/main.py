@@ -73,18 +73,27 @@ async def chat_options():
 async def prefetch_user_data(req: PrefetchRequest):
     """Warm all caches for a user. Called on login/new-session."""
     from tools.billing_tools import (
-        get_user_invoices, get_payment_methods,
-        check_roaming_status,
+        get_user_invoices,
+        check_roaming_status, check_wallet_amount_settlement,
     )
     from tools.support_tools import get_open_tickets
 
     uid = req.user_id
     try:
         # These calls populate the billing cache (including breakdown prefetch)
-        get_user_invoices(uid)
-        get_payment_methods(uid)
+        invoices = get_user_invoices(uid)
         check_roaming_status(uid)
         get_open_tickets(uid)
+
+        # Warm wallet cache for each invoice (needed for bill overdue payment flow)
+        for inv in (invoices or []):
+            inv_id = str(inv.get("invoice_id", ""))
+            if inv_id:
+                try:
+                    check_wallet_amount_settlement(uid, inv_id)
+                except Exception:
+                    pass
+
         print(f"⚡ Prefetched all Backend caches for user {uid}")
         return {"status": "ok"}
     except Exception as e:
@@ -242,7 +251,6 @@ async def chat_stream(req: ChatRequest):
                             tool_labels = {
                                 "get_user_invoices": "Fetching your invoices...",
                                 "get_user_invoices_breakdown": "Loading invoice breakdown...",
-                                "get_payment_methods": "Checking payment methods...",
                                 "check_roaming_status": "Checking roaming status...",
                                 "check_roaming_status_monthwise": "Checking roaming history...",
                                 "update_roaming_status_monthwise": "Updating roaming settings...",
@@ -252,6 +260,11 @@ async def chat_stream(req: ChatRequest):
                                 "get_open_tickets": "Loading support tickets...",
                                 "check_outage": "Checking for outages in your area...",
                                 "search_company_knowledge": "Searching knowledge base...",
+                                "is_user_service_active": "Checking your service status...",
+                                "get_bill_overdue_date": "Checking bill due date...",
+                                "set_promise_date": "Setting your promise date...",
+                                "make_payment": "Processing your payment...",
+                                "set_settle_wallet_amount": "Settling wallet credit...",
                             }
                             label = tool_labels.get(part.function_call.name, f"Looking up {part.function_call.name.replace('_', ' ')}...")
                             status_msg = json.dumps({"status": label, "done": False})

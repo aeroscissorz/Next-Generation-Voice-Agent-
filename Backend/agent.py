@@ -6,7 +6,6 @@ from instructions import UNIFIED_INSTRUCTION
 
 from tools.billing_tools import (
     get_user_invoices,
-    get_payment_methods,
     get_user_invoices_breakdown,
     check_roaming_status,
     check_roaming_status_monthwise,
@@ -39,7 +38,6 @@ root_agent = LlmAgent(
     tools=[
         # Billing
         get_user_invoices,
-        get_payment_methods,
         get_user_invoices_breakdown,
         check_roaming_status,
         check_roaming_status_monthwise,

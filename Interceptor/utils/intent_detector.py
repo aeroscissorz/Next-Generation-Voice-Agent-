@@ -98,9 +98,6 @@ def detect_intent(message: str, user_id: str):
          "get_user_invoices", {"user_id": user_id}),
         (r"^(invoice|invoices|bill details|billing)\s*$",
          "get_user_invoices", {"user_id": user_id}),
-        # Payment methods
-        (r"\b(show|get|see|view|check|what|my|the).*(payment method|payment option|card)",
-         "get_payment_methods", {"user_id": user_id}),
         # Roaming
         (r"\b(show|get|see|view|check|my|the).*(roaming|roam)",
          "check_roaming_status", {"user_id": user_id}),

@@ -3,6 +3,7 @@ Interceptor Service
 Channel-specific middleware for message processing and formatting
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -79,7 +80,6 @@ async def new_session(req: NewSessionRequest):
     result = await backend_proxy.new_session(req.user_id, req.name)
 
     # Prefetch user data in background to warm caches
-    import asyncio
     asyncio.create_task(_prefetch_user(req.user_id))
 
     return result
@@ -234,6 +234,8 @@ async def _handle_validate_user(req: ToolCallRequest) -> dict:
 
     if authenticated and customer_id:
         _voice_auth.set_authenticated(req.user_id, customer_id)
+        # Prefetch user data in background so subsequent tool calls are instant
+        asyncio.create_task(_prefetch_user(customer_id))
         return {
             "call_id": req.call_id,
             "result": json.dumps({"authenticated": True, "customer_id": customer_id, "message": message}),

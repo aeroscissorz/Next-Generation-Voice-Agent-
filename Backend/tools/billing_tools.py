@@ -87,24 +87,6 @@ def get_user_invoices(user_id: str):
         }]
 
 
-def get_payment_methods(user_id: str):
-    try:
-        supabase = get_supabase()
-        res = (
-            supabase
-            .table("payment_methods")
-            .select("methods")
-            .eq("user_id", user_id)
-            .single()
-            .execute()
-        )
-        return res.data["methods"] if res.data else []
-    except Exception as e:
-        print(f"Error fetching payment methods: {e}")
-        # Return mock data
-        return ["Credit Card ending in 1234", "PayPal"]
-
-
 def get_user_invoices_breakdown(invoice_id: str):
     cached = _cache_get(f"breakdown:{invoice_id}")
     if cached is not None:
@@ -124,7 +106,6 @@ def get_user_invoices_breakdown(invoice_id: str):
         return data
     except Exception as e:
         print(f"Error fetching invoice breakdown: {e}")
-        # Return mock breakdown
         return [{
             "item": "Monthly Service",
             "amount": 35.99,
@@ -195,7 +176,7 @@ def update_roaming_status_monthwise(user_id: str, month: str, year: str):
         return {"success": False, "error": str(e)}
 
 
-def check_wallet_amount_settlement(user_id: str, invoice_id: str):
+def check_wallet_amount_settlement(user_id: str):
     try:
         supabase = get_supabase()
         return (
@@ -203,7 +184,6 @@ def check_wallet_amount_settlement(user_id: str, invoice_id: str):
             .table("wallet_amount")
             .select("*")
             .eq("user_id", user_id)
-            .eq("invoice_id", invoice_id)
             .eq("settled", "No")
             .execute()
             .data
@@ -278,15 +258,40 @@ def make_payment(user_id: str, invoice_id: str):
         return {"success": False, "error": str(e)}
     
 
-def set_promise_date(user_id: str, invoice_id: str, promise_date: datetime):
+def set_promise_date(user_id: str, invoice_id: str, promise_date):
     try:
+        from dateutil import parser as dateparser
+        from datetime import timedelta
+
+        # Normalise to "YYYY-MM-DD" regardless of input type/format
+        if isinstance(promise_date, str):
+            date_str = dateparser.parse(promise_date).strftime("%Y-%m-%d")
+        else:
+            date_str = promise_date.strftime("%Y-%m-%d")
+
+        # Enforce: promise date must not exceed overdue_date + 7 days
         supabase = get_supabase()
+        invoice = (
+            supabase.table("invoices")
+            .select("overdue_date")
+            .eq("invoice_id", invoice_id)
+            .single()
+            .execute()
+            .data
+        )
+        if invoice and invoice.get("overdue_date"):
+            due = dateparser.parse(str(invoice["overdue_date"])).date()
+            max_date = due + timedelta(days=7)
+            promise = dateparser.parse(date_str).date()
+            if promise > max_date:
+                return {
+                    "success": False,
+                    "error": f"Promise date cannot be later than {max_date.strftime('%Y-%m-%d')} (overdue date + 7 days)."
+                }
+
         return (
-            supabase
-            .table("invoices")
-            .update({
-                "promise_date": promise_date.strftime("%Y-%m-%d"),
-            })
+            supabase.table("invoices")
+            .update({"promise_date": date_str})
             .eq("user_id", user_id)
             .eq("invoice_id", invoice_id)
             .execute()
@@ -315,7 +320,7 @@ def get_bill_overdue_date(user_id: str,invoice_id: str):
         return []
 
 
-def set_settle_wallet_amount(user_id: str, invoice_id: str):
+def set_settle_wallet_amount(user_id: str):
     try:
         supabase = get_supabase()
         return (
@@ -326,7 +331,6 @@ def set_settle_wallet_amount(user_id: str, invoice_id: str):
                 "settled": "Yes"
             })
             .eq("user_id", user_id)
-            .eq("invoice_id", invoice_id)
             .execute()
             .data
         )

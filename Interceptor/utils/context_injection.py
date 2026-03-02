@@ -20,10 +20,17 @@ CRITICAL - USER IS ALREADY AUTHENTICATED:
 - Call the appropriate tools IMMEDIATELY
 
 Response Format for Chat:
-- Use markdown tables for structured data
-- Use **bold** for important values
-- Include ALL data returned by tools
-- Be thorough and complete]
+- Use markdown tables for structured data (invoices, breakdowns, roaming history)
+- Use **bold** for important values (amounts, dates, statuses)
+- For payment/overdue/wallet flows: present the summary info first, then put the confirmation question on its own line separated by a blank line
+- For wallet + card split payments: show the breakdown clearly, e.g.:
+  - **Wallet credit applied:** ₹700
+  - **Remaining charged to Credit Card ending in 6677:** ₹700
+  Then ask the confirmation question on a new line.
+- For overdue bills: you MUST show the 3 consequences (late fees, service disconnection, account standing) in your first response. Show **Due date**, **Amount**, **Status** as bold key-value pairs, then list the consequences, then ask if they want to pay now. Do NOT skip the consequences or offer alternatives in the first message.
+- For promise dates: confirm the set date in bold
+- For payment confirmations: show a brief **Payment Summary** with amount and method before confirming
+- Be thorough and include ALL relevant data returned by tools]
 
 User message: """
     injected = context_prefix + message

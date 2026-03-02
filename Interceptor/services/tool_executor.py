@@ -61,13 +61,14 @@ class ToolExecutor:
             self._sb.table("roaming").select("*").eq("user_id", user_id).execute()
             # Tickets
             self._sb.table("support_tickets").select("*").eq("user_id", user_id).eq("status", "open").execute()
-            # Wallet
-            self._sb.table("wallet_amount").select("*").eq("user_id", user_id).execute()
-            # Payment methods
-            try:
-                self._sb.table("payment_methods").select("methods").eq("user_id", user_id).single().execute()
-            except Exception:
-                pass
+            # Wallet — prefetch per invoice for bill overdue payment flow
+            for inv in invoices:
+                inv_id = str(inv.get("invoice_id", ""))
+                if inv_id:
+                    try:
+                        self._sb.table("wallet_amount").select("*").eq("user_id", user_id).eq("invoice_id", inv_id).execute()
+                    except Exception:
+                        pass
 
             logger.info(f"⚡ Prefetched all data for user {user_id}")
         except Exception as e:
@@ -103,16 +104,6 @@ class ToolExecutor:
             # Store prefetched data for potential fast-path use
             self._prefetched_breakdowns = breakdowns
             return invoices
-
-        if tool_name == "get_payment_methods":
-            res = (
-                self._sb.table("payment_methods")
-                .select("methods")
-                .eq("user_id", uid)
-                .single()
-                .execute()
-            )
-            return res.data.get("methods", []) if res.data else []
 
         if tool_name == "check_roaming_status":
             return (
