@@ -34,6 +34,7 @@ AVAILABLE TOOLS
 - set_promise_date(user_id, invoice_id, promise_date) - set a promise date for a specific invoice
 - make_payment(user_id, invoice_id) - process payment for a specific invoice
 - set_settle_wallet_amount(user_id) - settle the wallet amount
+- get_promise_date(user_id, invoice_id) - get the promise date for a specific invoice
 
 WHEN TO USE EACH TOOL
 
@@ -50,6 +51,7 @@ get bill overdue date: call get_bill_overdue_date.
 set promise date: call set_promise_date.
 To make payment: call make_payment.
 To set settle wallet amount: call set_settle_wallet_amount.
+To get promise date: call get_promise_date.
 
 OUTAGE REFUND FLOW
 When a user mentions an outage, service disruption, or asks why they were billed during an outage:

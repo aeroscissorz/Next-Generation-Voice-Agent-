@@ -265,6 +265,7 @@ async def chat_stream(req: ChatRequest):
                                 "set_promise_date": "Setting your promise date...",
                                 "make_payment": "Processing your payment...",
                                 "set_settle_wallet_amount": "Settling wallet credit...",
+                                "get_promise_date":"Getting promised date...."
                             }
                             label = tool_labels.get(part.function_call.name, f"Looking up {part.function_call.name.replace('_', ' ')}...")
                             status_msg = json.dumps({"status": label, "done": False})

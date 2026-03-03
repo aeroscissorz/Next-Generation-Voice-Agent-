@@ -337,3 +337,20 @@ def set_settle_wallet_amount(user_id: str):
     except Exception as e:
         print(f"Error updating wallet amount: {e}")
         return {"success": False, "error": str(e)}
+
+def get_promise_date(user_id: str,invoice_id: str):
+    try:
+        supabase = get_supabase()
+        return (
+            supabase
+            .table("invoices")
+            .select("promise_date")
+            .eq("user_id", user_id)
+            .eq("invoice_id", invoice_id)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as e:
+        print(f"Error checking get_promise_date: {e}")
+        return []

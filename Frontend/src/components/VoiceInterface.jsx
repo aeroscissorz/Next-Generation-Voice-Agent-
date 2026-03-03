@@ -407,7 +407,7 @@ function VoiceInterface({ channel, userId, onResponse }) {
                         type: 'message',
                         role: 'user',
                         content: [
-                            { type: 'input_text', text: 'Hello! Please greet me and ask for my User ID.' }
+                            { type: 'input_text', text: '[System: The call just connected. Say "Hi, this is Jessica from Verizon support", greet the caller warmly as a person, then ask for their User ID.]' }
                         ]
                     }
                 }

@@ -16,7 +16,8 @@ from tools.billing_tools import (
     make_payment,
     set_promise_date,
     get_bill_overdue_date,
-    set_settle_wallet_amount
+    set_settle_wallet_amount,
+    get_promise_date
 )
 
 from tools.support_tools import (
@@ -54,6 +55,7 @@ root_agent = LlmAgent(
         set_promise_date,
         get_bill_overdue_date,
         is_user_service_active,
-        set_settle_wallet_amount
+        set_settle_wallet_amount,
+        get_promise_date
     ],
 )
