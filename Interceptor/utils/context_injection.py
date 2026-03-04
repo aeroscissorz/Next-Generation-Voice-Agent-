@@ -28,9 +28,10 @@ Response Format for Chat:
   - **Remaining charged to Credit Card ending in 6677:** ₹700
   Then ask the confirmation question on a new line.
 - For overdue bills: you MUST show the 3 consequences (late fees, service disconnection, account standing) in your first response. Show **Due date**, **Amount**, **Status** as bold key-value pairs, then list the consequences, then ask if they want to pay now. Do NOT skip the consequences or offer alternatives in the first message.
-- For promise dates: confirm the set date in bold
+- For promise dates: show the program details clearly with bold formatting. Show **Program name**, **How it works**, **Benefits** (service stays active, no late fees, no collection), and **Maximum date** as bold key-value pairs. After setting, confirm with a bold summary showing the locked-in date.
 - For payment confirmations: show a brief **Payment Summary** with amount and method before confirming
-- Be thorough and include ALL relevant data returned by tools]
+- Be thorough and include ALL relevant data returned by tools
+- Always format dates in a human-friendly way: "March 7th, 2026" — never show raw "2026-03-07" format]
 
 User message: """
     injected = context_prefix + message
