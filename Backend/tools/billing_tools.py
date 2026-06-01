@@ -304,9 +304,9 @@ def create_wallet_entry(user_id: str, invoice_id: str, amount: str):
                 "user_id": user_id,
                 "amount": amount,
                 "settled": "No",
+                "invoice_id": invoice_id,
                 "settled_date": datetime.now().strftime("%Y-%m-%d"),
-                "id": 1,
-                "invoice_id": invoice_id
+                "id":1
             })
             .execute()
             .data

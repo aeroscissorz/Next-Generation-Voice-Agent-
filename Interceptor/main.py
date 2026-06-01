@@ -110,9 +110,176 @@ _voice_auth = init_voice_auth_service(supabase)
 VOICE_SYSTEM_INSTRUCTIONS = load_system_instructions(config.VOICE_INSTRUCTIONS_PATH)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# CHAT ENDPOINTS
-# ═══════════════════════════════════════════════════════════════════════════════
+
+# ---------------------------------------------------------------------------
+
+# Voice system instructions
+# ---------------------------------------------------------------------------
+def load_system_instructions():
+    """Load system instructions from the markdown file."""
+    try:
+        # Go up one level from 'Interceptor' to 'eleven_labs_prompts'
+        prompt_path = os.path.join(os.path.dirname(__file__), "..", "eleven_labs_prompts", "system.md")
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        logger.error(f"Failed to load system instructions: {e}")
+        # Fallback to a minimal instruction set if file read fails
+        return """You are a helpful telecom voice assistant. 
+        Strictly handle telecom support and billing only. 
+        Ask for numeric User ID first. 
+        Always say a filler before calling tools.
+        """
+
+VOICE_SYSTEM_INSTRUCTIONS = load_system_instructions()
+
+VOICE_TOOLS = [
+    {
+        "type": "function",
+        "name": "validate_user",
+        "description": "Validate a user's identity by their User ID. Must be called before any support queries are allowed.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "The user ID spoken by the caller"
+                }
+            },
+            "required": ["user_id"]
+        }
+    },
+    {
+        "type": "function",
+        "name": "forward_to_backend",
+        "description": "Forward a user query to the backend support system. Use for billing, invoices, payments, support tickets, outages, roaming, wallet, and all account queries.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "A clear natural-language description of what the user needs"
+                }
+            },
+            "required": ["message"]
+        }
+    }
+]
+
+
+# ---------------------------------------------------------------------------
+# Formatting helpers
+# ---------------------------------------------------------------------------
+
+from google import genai
+# ... (imports)
+
+# ...
+
+def format_reply_for_chat(reply_text: str) -> str:
+    if not reply_text:
+        return ""
+
+    if not GOOGLE_API_KEY:
+        return reply_text
+
+    try:
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        prompt = f"""You are a formatting assistant for a customer support chat.
+Convert the plain response into clean markdown for chat UI.
+
+Rules:
+- Keep meaning exactly the same. Do not add or remove facts.
+- Use short paragraphs and line breaks for readability.
+- Use bullet points for lists/options.
+- Use **bold** for important values (amounts, dates, IDs, statuses).
+- If there are multiple structured items, use a markdown table.
+- Return only formatted markdown.
+
+Plain response:
+{reply_text}
+"""
+        response = client.models.generate_content(
+            model=GOOGLE_GENAI_MODEL,
+            contents=prompt
+        )
+        formatted = response.text if response and response.text else ""
+        return formatted.strip() if formatted else reply_text
+    except Exception:
+        return reply_text
+
+
+def format_reply_for_voice(reply_text: str) -> str:
+    """Convert a backend reply into voice-friendly text (1-2 sentences, no symbols)."""
+    if not reply_text:
+        return ""
+
+    if not GOOGLE_API_KEY:
+        return reply_text
+
+    try:
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        prompt = f"""You are a voice formatting assistant. Convert this customer support response
+into 1-2 short spoken sentences suitable for text-to-speech.
+
+Rules:
+- Extract only the most important information.
+- Use simple, spoken language.
+- No markdown, no bullet points, no special characters.
+- Say "dollar" not "$", say "percent" not "%".
+- Numbers should be spoken naturally (e.g., "fourteen hundred" not "1400").
+- Keep it brief — not more than 3 sentences if possible.
+
+Response to convert:
+{reply_text}
+"""
+        response = client.models.generate_content(
+            model=GOOGLE_GENAI_MODEL,
+            contents=prompt
+        )
+        formatted = response.text if response and response.text else ""
+        return formatted.strip() if formatted else reply_text
+    except Exception:
+        return reply_text
+
+
+def normalize_to_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value).strip()
+    return str(value).strip()
+
+
+# ---------------------------------------------------------------------------
+# Backend proxy helper
+# ---------------------------------------------------------------------------
+
+async def proxy_request(method: str, path: str, payload: Optional[Dict[str, Any]] = None):
+    target_url = f"{BACKEND_URL}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+            response = await client.request(method, target_url, json=payload)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Backend unavailable: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="Invalid JSON from backend") from exc
+
+
+# ---------------------------------------------------------------------------
+# Existing text-chat endpoints  (unchanged)
+# ---------------------------------------------------------------------------
 
 @app.get("/")
 async def health():
