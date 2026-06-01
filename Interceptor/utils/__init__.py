@@ -1,5 +1,16 @@
 """
-Utility modules for the Interceptor service
+Interceptor Utilities Package
+==============================
+Re-exports all utility modules for convenient importing in main.py.
+
+Modules:
+  - config             — Environment variables and app configuration
+  - context_injection   — Channel-specific message context injection
+  - formatters          — Response formatting for chat and voice
+  - helpers             — normalize_to_text, load_system_instructions, extract_user_id_from_spoken
+  - models              — Pydantic request models (ChatRequest, NewSessionRequest, ToolCallRequest)
+  - tools               — OpenAI Realtime API voice tool definitions
+  - intent_detector     — Fast-path intent matching (imported separately in main.py)
 """
 
 from .config import config, Config

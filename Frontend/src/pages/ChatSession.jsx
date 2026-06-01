@@ -1,14 +1,25 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { Settings as SettingsIcon, Send, Download, LogOut, MessageSquarePlus } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { Settings as SettingsIcon, Send, Download, LogOut, MessageSquarePlus, Mic, MicOff, PhoneOff } from 'lucide-react'
 import Aurora from '../components/Aurora'
 import { Orb } from '../components/ui/orb'
 import CustomScrollbar from '../components/CustomScrollbar'
 import Sidebar from '../components/Sidebar'
 import VoiceInterface from '../components/VoiceInterface'
 import MessageContent from '../components/MessageContent'
-import { processMessage, processMessageStream } from '../services/interceptor'
+import { processMessageStream } from '../services/interceptor'
 import { createNewSession } from '../api/chatApi'
+
+// Task 2: voiceStatusText map (used in Voice_Panel)
+const voiceStatusText = {
+  disconnected: 'Click mic to start',
+  connecting: 'Connecting...',
+  connected: 'Connected — ready',
+  listening: 'Listening...',
+  processing: 'Thinking...',
+  speaking: 'Speaking...',
+  error: 'Something went wrong',
+}
 
 function ThinkingIndicator({ liveStatus }) {
     const phrases = [
@@ -69,15 +80,16 @@ function ChatSession() {
     const [responses, setResponses] = useState([])
     const [isLoading, setIsLoading] = useState(false)
     const [statusMsg, setStatusMsg] = useState('')
-    const [mode, setMode] = useState(location.state?.mode || 'chat') // Get mode from navigation state
     const chatEndRef = useRef(null)
-    const orbColorsRef = useRef(["#FF6B6B", "#4ECDC4"])
 
-    // Determine orb size based on mode
-    const orbSize = mode === 'voice' || mode === 'telephonic' ? 'w-20 h-20' : 'w-12 h-12'
+    // Task 2: Unified layout state
+    const [voiceStatus, setVoiceStatus] = useState('disconnected')
+    const [voiceConnected, setVoiceConnected] = useState(false)
+    const [voiceMicOn, setVoiceMicOn] = useState(false)
+    const voiceOrbColorsRef = useRef(["#6B7280", "#9CA3AF"])
+    const voiceImperativeRef = useRef(null)
 
     useEffect(() => {
-        // Get user data from localStorage
         const userData = localStorage.getItem('user')
         if (!userData) {
             navigate('/login')
@@ -87,7 +99,6 @@ function ChatSession() {
         const user = JSON.parse(userData)
         const name = user.name || user.email?.split('@')[0] || 'there'
 
-        // Get initial message from location state
         const initialMessage = location.state?.initialMessage
         const initialResponse = location.state?.initialResponse
 
@@ -97,13 +108,13 @@ function ChatSession() {
                 { role: "agent", text: initialResponse }
             ])
         } else {
-            // AI speaks first
             setResponses([
                 { role: "agent", text: `Hi ${name}! I'm your NextGen support assistant. How can I help you today?` }
             ])
         }
     }, [navigate, location.state])
 
+    // Task 6: Auto-scroll fires whenever responses updates (including voice-originated)
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }, [responses])
@@ -119,16 +130,12 @@ function ChatSession() {
 
         try {
             setIsLoading(true)
-
-            // Call backend to create new session
             await createNewSession(
                 user.user_id,
                 user.name || user.email.split('@')[0]
             )
-
             setResponses([])
             setMessage('')
-
             setResponses([
                 { role: "agent", text: `Hi ${name}! Starting fresh — what can I help you with?` }
             ])
@@ -148,29 +155,20 @@ function ChatSession() {
         const user = JSON.parse(localStorage.getItem("user"))
 
         try {
-            // Add user message immediately
-            setResponses(prev => [
-                ...prev,
-                { role: "user", text: message }
-            ])
-
-            // Clear input and set loading
+            setResponses(prev => [...prev, { role: "user", text: message }])
             const currentMessage = message
             setMessage("")
             setIsLoading(true)
             setStatusMsg('')
 
-            // Process message with streaming
             await processMessageStream(
                 'chat',
                 { text: currentMessage },
                 user.user_id,
-                // onChunk - intermediate text updates (partial streaming)
                 (text) => {
                     setResponses(prev => {
                         const newResponses = [...prev]
                         const lastIdx = newResponses.length - 1
-                        // Update existing streaming message or add new one
                         if (lastIdx >= 0 && newResponses[lastIdx].isStreaming) {
                             newResponses[lastIdx] = { role: 'agent', text, isStreaming: true }
                         } else {
@@ -179,13 +177,11 @@ function ChatSession() {
                         return newResponses
                     })
                 },
-                // onDone - final response
                 (finalText) => {
                     setStatusMsg('')
                     setResponses(prev => {
                         const newResponses = [...prev]
                         const lastIdx = newResponses.length - 1
-                        // Replace streaming message or add final message
                         if (lastIdx >= 0 && newResponses[lastIdx].isStreaming) {
                             newResponses[lastIdx] = { role: 'agent', text: finalText, isStreaming: false }
                         } else {
@@ -195,13 +191,11 @@ function ChatSession() {
                     })
                 },
                 user.name || user.email.split('@')[0],
-                // onStatus - live tool activity
                 (status) => setStatusMsg(status)
             )
         } catch (error) {
             console.error("Error sending message:", error)
             setResponses(prev => {
-                // Remove the streaming message and add error
                 const filtered = prev.filter(m => !m.isStreaming)
                 return [
                     ...filtered,
@@ -212,6 +206,11 @@ function ChatSession() {
             setIsLoading(false)
         }
     }
+
+    // Task 3: Derive agentState for Orb
+    const agentState = voiceStatus === 'speaking' ? 'speaking'
+        : voiceStatus === 'listening' ? 'listening'
+        : null
 
     return (
         <div className="flex h-screen bg-black text-white overflow-hidden relative">
@@ -229,9 +228,9 @@ function ChatSession() {
             <Sidebar collapsed={true} variant="chat" />
 
             {/* Main Content */}
-            <main className="flex-1 flex flex-col relative z-10">
-                {/* Top Bar - Same as Dashboard */}
-                <nav className="relative z-10 flex items-center justify-between px-8 py-6">
+            <main className="flex-1 flex flex-col relative z-10 min-h-0">
+                {/* Task 5: nav — top bar unchanged */}
+                <nav className="relative z-10 flex items-center justify-between px-8 py-6 flex-shrink-0">
                     <div className="text-xl font-bold">NextGen Voice</div>
 
                     <div className="flex items-center gap-4">
@@ -264,121 +263,141 @@ function ChatSession() {
                     </div>
                 </nav>
 
-                {/* Compact Header with Small Orb - Only show in chat mode */}
-                {mode === 'chat' && (
-                    <div className="flex items-center justify-center py-4">
-                        <div className={`relative ${orbSize} mr-3 transition-all duration-300`}>
+                {/* Task 5: Chat_Panel — always visible, flex-1 */}
+                <CustomScrollbar className="flex-1 px-6 py-4 min-h-0">
+                    <div className="max-w-4xl mx-auto space-y-4">
+                        {responses.map((msg, idx) => (
+                            <div
+                                key={idx}
+                                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                            >
+                                <div
+                                    className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm
+                                        ${msg.role === "user"
+                                            ? "bg-green-500 text-black rounded-br-none"
+                                            : "bg-white/10 text-white rounded-bl-none"
+                                        }`}
+                                >
+                                    {msg.role === "user" ? (
+                                        msg.text
+                                    ) : (
+                                        <MessageContent content={msg.text} />
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        {isLoading && !responses.some(m => m.isStreaming) && (
+                            <ThinkingIndicator liveStatus={statusMsg} />
+                        )}
+                        <div ref={chatEndRef} />
+                    </div>
+                </CustomScrollbar>
+
+                {/* Task 3: Voice_Panel — always visible, fixed height strip */}
+                <div className="flex-shrink-0 border-t border-white/10 bg-black/20 px-6 py-3">
+                    <div className="max-w-4xl mx-auto flex items-center gap-4">
+                        {/* Orb */}
+                        <div className="w-14 h-14 flex-shrink-0">
                             <Orb
-                                colorsRef={orbColorsRef}
-                                agentState={null}
+                                colorsRef={voiceOrbColorsRef}
+                                agentState={agentState}
                                 className="w-full h-full"
                             />
                         </div>
-                        <div>
-                            <p className="text-sm text-gray-400">Chatting with</p>
-                            <h2 className="text-lg font-medium text-white">NextGen AI Assistant</h2>
-                        </div>
+
+                        {/* Status text */}
+                        <p className="text-sm text-gray-400 flex-1">
+                            {voiceStatusText[voiceStatus] ?? voiceStatus}
+                        </p>
+
+                        {/* Error message */}
+                        {voiceStatus === 'error' && (
+                            <p className="text-xs text-red-400">Connection error — please try again</p>
+                        )}
+
+                        {/* Mic button */}
+                        <button
+                            onClick={() => voiceImperativeRef.current?.toggleMic()}
+                            disabled={voiceStatus === 'connecting'}
+                            className={`w-10 h-10 flex items-center justify-center rounded-full transition
+                                ${voiceMicOn
+                                    ? 'bg-green-500 hover:bg-green-600 text-white'
+                                    : 'bg-gray-600 hover:bg-gray-500 text-white'
+                                }
+                                disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title={voiceMicOn ? 'Mute mic' : 'Unmute mic'}
+                        >
+                            {voiceStatus === 'connecting' ? (
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            ) : voiceMicOn ? (
+                                <Mic size={16} />
+                            ) : (
+                                <MicOff size={16} />
+                            )}
+                        </button>
+
+                        {/* Disconnect button — only when connected */}
+                        {voiceConnected && (
+                            <button
+                                onClick={() => voiceImperativeRef.current?.disconnect()}
+                                className="w-10 h-10 flex items-center justify-center rounded-full bg-red-500 hover:bg-red-600 text-white transition"
+                                title="Disconnect voice"
+                            >
+                                <PhoneOff size={16} />
+                            </button>
+                        )}
                     </div>
-                )}
+                </div>
 
-                {/* Scrollable Chat Area - Only show in chat mode */}
-                {mode === 'chat' && (
-                    <CustomScrollbar className="flex-1 px-6 py-4">
-                        <div className="max-w-4xl mx-auto space-y-4">
-                            {responses.map((msg, idx) => (
-                                <div
-                                    key={idx}
-                                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"
-                                        }`}
+                {/* Input_Toolbar — chat input always visible */}
+                <div className="flex-shrink-0 px-6 pb-4 pt-2">
+                    <div className="max-w-4xl mx-auto">
+                        <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl">
+                            <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent rounded-2xl pointer-events-none" />
+
+                            <div className="relative flex items-center gap-3">
+                                <textarea
+                                    value={message}
+                                    onChange={(e) => setMessage(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter" && !e.shiftKey && !isLoading) {
+                                            e.preventDefault()
+                                            sendMessage()
+                                        }
+                                    }}
+                                    placeholder={isLoading ? "Waiting for response..." : "Type your message..."}
+                                    className="flex-1 bg-transparent border-none outline-none resize-none text-sm placeholder-gray-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                    rows={2}
+                                    disabled={isLoading}
+                                />
+                                <button
+                                    onClick={sendMessage}
+                                    className="w-9 h-9 flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-full transition shadow-lg shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                                    title="Send Message"
+                                    disabled={isLoading}
                                 >
-                                    <div
-                                        className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm
-                                    ${msg.role === "user"
-                                                ? "bg-green-500 text-black rounded-br-none"
-                                                : "bg-white/10 text-white rounded-bl-none"
-                                            }`}
-                                    >
-                                        {msg.role === "user" ? (
-                                            msg.text
-                                        ) : (
-                                            <MessageContent content={msg.text} />
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                            {isLoading && !responses.some(m => m.isStreaming) && (
-                                <ThinkingIndicator liveStatus={statusMsg} />
-                            )}                            <div ref={chatEndRef} />
-                        </div>
-                    </CustomScrollbar>
-                )}
-
-                {/* Bottom Input Area or Voice Interface */}
-                <div className={`${mode === 'chat' ? 'px-6 pb-4' : 'flex-1 flex items-center justify-center'}`}>
-                    {mode === 'chat' ? (
-                        // Chat Input
-                        <div className="max-w-4xl mx-auto">
-                            <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl">
-                                <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent rounded-2xl pointer-events-none"></div>
-
-                                {/* Input Field */}
-                                <div className="relative flex items-center gap-3">
-                                    <textarea
-                                        value={message}
-                                        onChange={(e) => setMessage(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter" && !e.shiftKey && !isLoading) {
-                                                e.preventDefault()
-                                                sendMessage()
-                                            }
-                                        }}
-                                        placeholder={isLoading ? "Waiting for response..." : "Type your message..."}
-                                        className="flex-1 bg-transparent border-none outline-none resize-none text-sm placeholder-gray-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                                        rows={2}
-                                        disabled={isLoading}
-                                    />
-
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={sendMessage}
-                                            className="w-9 h-9 flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-full transition shadow-lg shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            title="Send Message"
-                                            disabled={isLoading}
-                                        >
-                                            {isLoading ? (
-                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                            ) : (
-                                                <Send size={16} />
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
+                                    {isLoading ? (
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <Send size={16} />
+                                    )}
+                                </button>
                             </div>
                         </div>
-                    ) : (
-                        // Voice Interface - Full screen centered
-                        <div className="w-full h-full flex items-center justify-center">
-                            <VoiceInterface
-                                channel={mode}
-                                userId={JSON.parse(localStorage.getItem('user'))?.user_id}
-                                onResponse={(data) => {
-                                    if (typeof data === 'string') {
-                                        setResponses(prev => [
-                                            ...prev,
-                                            { role: 'agent', text: data }
-                                        ])
-                                    } else if (data?.user && data?.agent) {
-                                        setResponses(prev => [
-                                            ...prev,
-                                            { role: 'user', text: data.user },
-                                            { role: 'agent', text: data.agent }
-                                        ])
-                                    }
-                                }}
-                            />
-                        </div>
-                    )}
+                    </div>
                 </div>
+
+                {/* Task 5: VoiceInterface — headless, just before closing main */}
+                <VoiceInterface
+                    channel="voice"
+                    userId={JSON.parse(localStorage.getItem('user'))?.user_id}
+                    onResponse={undefined}
+                    onStatusChange={setVoiceStatus}
+                    onOrbColorsChange={(colors) => { voiceOrbColorsRef.current = colors }}
+                    onConnectedChange={setVoiceConnected}
+                    onMicChange={setVoiceMicOn}
+                    imperativeRef={voiceImperativeRef}
+                />
             </main>
         </div>
     )

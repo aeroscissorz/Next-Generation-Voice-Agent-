@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Mic, MicOff, PhoneOff } from 'lucide-react'
-import { Orb } from './ui/orb'
-import useHoldMusic from './useHoldMusic'
+import { buildFillerPrompt, buildFollowUpPrompt } from './voiceFillerHelpers'
 
 const INTERCEPTOR_URL =
     import.meta.env.VITE_INTERCEPTOR_URL ||
@@ -13,16 +11,13 @@ const INTERCEPTOR_URL =
  * Connects to OpenAI Realtime API via WebRTC, routes tool calls through
  * the Interceptor layer.
  */
-function VoiceInterface({ channel, userId, onResponse }) {
+function VoiceInterface({ channel, userId, onResponse, onStatusChange, onOrbColorsChange, onConnectedChange, onMicChange, imperativeRef }) {
     const [status, setStatus] = useState('disconnected') // disconnected | connecting | connected | listening | processing | speaking | error
     const [transcript, setTranscript] = useState('')
     const [assistantText, setAssistantText] = useState('')
     const [error, setError] = useState(null)
     const [isMicOn, setIsMicOn] = useState(false)
     const [debugEvents, setDebugEvents] = useState([])
-
-    // Hold music — plays during tool call processing
-    const { startMusic, stopMusic } = useHoldMusic(0.12)
 
     const pcRef = useRef(null)
     const dcRef = useRef(null)
@@ -33,7 +28,16 @@ function VoiceInterface({ channel, userId, onResponse }) {
     const nudgeCountRef = useRef(0)
     const isProcessingToolRef = useRef(false)  // Prevent duplicate tool responses
     const audioContextRef = useRef(null)  // For noise filtering
+    const isFillerPhaseRef = useRef(false)        // True while filler is active
+    const toolCallPendingRef = useRef(false)      // True while tool call HTTP request is in flight
+    const followUpCountRef = useRef(0)            // Follow-up prompts sent for current tool call
+    const fillerTimerRef = useRef(null)           // Single managed timer for filler scheduling
+    const pendingToolNameRef = useRef(null)       // Tool name for building filler prompts
+    const pendingToolResultRef = useRef(null)     // Queued tool result waiting for filler to finish
 
+    const MAX_FOLLOW_UPS = 2
+    const FILLER_INITIAL_DELAY = 3000   // 3s before first filler
+    const FILLER_FOLLOWUP_DELAY = 8000  // 8s between follow-ups
     const SILENCE_TIMEOUT_MS = 20000 // 20 seconds of silence before nudge
     const MAX_NUDGES = 2 // Max nudges before staying quiet
 
@@ -59,7 +63,18 @@ function VoiceInterface({ channel, userId, onResponse }) {
             default:
                 orbColorsRef.current = ["#6B7280", "#9CA3AF"] // gray
         }
+        onOrbColorsChange?.(orbColorsRef.current)
     }, [status])
+
+    // Lift status to parent
+    useEffect(() => {
+        onStatusChange?.(status)
+    }, [status, onStatusChange])
+
+    // Lift isMicOn to parent
+    useEffect(() => {
+        onMicChange?.(isMicOn)
+    }, [isMicOn, onMicChange])
 
     /**
      * Add event to debug log
@@ -111,6 +126,37 @@ function VoiceInterface({ channel, userId, onResponse }) {
             }
         }, SILENCE_TIMEOUT_MS)
     }, [resetSilenceTimer, logEvent])
+
+    /**
+     * Clear any pending filler timer.
+     */
+    const clearFillerTimer = useCallback(() => {
+        if (fillerTimerRef.current) {
+            clearTimeout(fillerTimerRef.current)
+            fillerTimerRef.current = null
+        }
+    }, [])
+
+    /**
+     * Send a filler/follow-up message via the data channel.
+     */
+    const sendFiller = useCallback((promptText) => {
+        const dc = dcRef.current
+        if (dc && dc.readyState === 'open') {
+            dc.send(JSON.stringify({
+                type: 'conversation.item.create',
+                item: {
+                    type: 'message',
+                    role: 'user',
+                    content: [{
+                        type: 'input_text',
+                        text: promptText
+                    }]
+                }
+            }))
+            dc.send(JSON.stringify({ type: 'response.create' }))
+        }
+    }, [])
 
     /**
      * Forward a tool call to the interceptor and return the result.
@@ -192,7 +238,6 @@ function VoiceInterface({ channel, userId, onResponse }) {
             case 'response.audio_transcript.delta':
             case 'response.text.delta':
                 if (data.delta) {
-                    stopMusic() // Agent is speaking — stop hold music
                     setAssistantText(prev => prev + data.delta)
                     setStatus('speaking')
                 }
@@ -222,34 +267,117 @@ function VoiceInterface({ channel, userId, onResponse }) {
 
                 console.log(`Tool call: ${toolName}`, argsJson)
 
-                // Forward to interceptor
-                const result = await handleToolCall(callId, toolName, argsJson)
+                // Set filler state flags — timer starts when the agent's initial
+                // narration finishes (response.done), not here
+                toolCallPendingRef.current = true
+                followUpCountRef.current = 0
+                // Store toolName for filler prompt building later
+                pendingToolNameRef.current = toolName
 
-                // Send tool result back to OpenAI
-                const dc = dcRef.current
-                if (dc && dc.readyState === 'open') {
-                    // Create the function call output
-                    dc.send(JSON.stringify({
-                        type: 'conversation.item.create',
-                        item: {
-                            type: 'function_call_output',
-                            call_id: callId,
-                            output: result,
-                        }
-                    }))
+                // Run tool call in parallel
+                handleToolCall(callId, toolName, argsJson).then((result) => {
+                    // Tool result arrived — cancel any pending filler timer
+                    clearFillerTimer()
+                    toolCallPendingRef.current = false
+                    pendingToolNameRef.current = null
+                    isFillerPhaseRef.current = false
 
-                    // Trigger the model to continue responding
-                    dc.send(JSON.stringify({
-                        type: 'response.create',
-                    }))
-                }
-                
-                isProcessingToolRef.current = false
+                    console.log(`Tool result arrived. Storing and attempting cancel.`)
+
+                    // Store the result for response.done to drain
+                    pendingToolResultRef.current = { callId, result }
+
+                    const dc = dcRef.current
+                    if (dc && dc.readyState === 'open') {
+                        // Try to cancel any active response
+                        dc.send(JSON.stringify({ type: 'response.cancel' }))
+
+                        // Also set a fallback timer — if cancel fails (no active response)
+                        // or response.done doesn't fire, send the result directly
+                        setTimeout(() => {
+                            if (!pendingToolResultRef.current) return // already drained
+                            const pending = pendingToolResultRef.current
+                            pendingToolResultRef.current = null
+                            console.log('Fallback: sending tool result directly')
+
+                            const dc2 = dcRef.current
+                            if (dc2 && dc2.readyState === 'open') {
+                                dc2.send(JSON.stringify({
+                                    type: 'conversation.item.create',
+                                    item: {
+                                        type: 'function_call_output',
+                                        call_id: pending.callId,
+                                        output: pending.result,
+                                    }
+                                }))
+                                dc2.send(JSON.stringify({ type: 'response.create' }))
+                            }
+                            isProcessingToolRef.current = false
+                        }, 300)
+                    }
+                })
+
                 break;
             }
 
             case 'response.done':
-                console.log('Response done:', data.response)
+                console.log('Response done:', data.response?.status,
+                    'isFillerPhase=', isFillerPhaseRef.current,
+                    'toolCallPending=', toolCallPendingRef.current,
+                    'pendingToolResult=', !!pendingToolResultRef.current)
+
+                // --- Queued tool result: filler just finished, tool result waiting ---
+                if (pendingToolResultRef.current) {
+                    const { callId: queuedCallId, result: queuedResult } = pendingToolResultRef.current
+                    pendingToolResultRef.current = null
+                    isFillerPhaseRef.current = false
+                    clearFillerTimer()
+                    console.log('Draining queued tool result after filler finished')
+
+                    const dc = dcRef.current
+                    if (dc && dc.readyState === 'open') {
+                        dc.send(JSON.stringify({
+                            type: 'conversation.item.create',
+                            item: {
+                                type: 'function_call_output',
+                                call_id: queuedCallId,
+                                output: queuedResult,
+                            }
+                        }))
+                        dc.send(JSON.stringify({ type: 'response.create' }))
+                    }
+                    isProcessingToolRef.current = false
+                    break
+                }
+
+                // --- Filler follow-up logic ---
+                if (isFillerPhaseRef.current && toolCallPendingRef.current) {
+                    // Filler just finished speaking. Schedule next follow-up if allowed.
+                    if (followUpCountRef.current < MAX_FOLLOW_UPS) {
+                        clearFillerTimer()
+                        fillerTimerRef.current = setTimeout(() => {
+                            if (!isFillerPhaseRef.current || !toolCallPendingRef.current) return
+                            sendFiller(buildFollowUpPrompt())
+                            followUpCountRef.current += 1
+                        }, FILLER_FOLLOWUP_DELAY)
+                    }
+                    // Stay in filler phase — don't reset status
+                    break
+                }
+
+                // --- Agent's initial narration just finished, tool call still in flight ---
+                // Start the filler timer now — first filler fires after FILLER_INITIAL_DELAY
+                if (toolCallPendingRef.current && !isFillerPhaseRef.current) {
+                    clearFillerTimer()
+                    fillerTimerRef.current = setTimeout(() => {
+                        if (!toolCallPendingRef.current) return
+                        isFillerPhaseRef.current = true
+                        sendFiller(buildFillerPrompt(pendingToolNameRef.current))
+                    }, FILLER_INITIAL_DELAY)
+                    break
+                }
+
+                // --- Normal response.done handling (includes tool result response) ---
                 isProcessingToolRef.current = false  // Reset tool processing flag
 
                 if (data.response?.status === 'failed') {
@@ -321,47 +449,6 @@ function VoiceInterface({ channel, userId, onResponse }) {
                 } 
             })
             streamRef.current = stream
-            
-            // 2.5 Apply additional noise filtering using Web Audio API
-            const audioContext = new AudioContext({ sampleRate: 24000 })
-            const source = audioContext.createMediaStreamSource(stream)
-            
-            // High-pass filter to remove low-frequency rumble/background noise
-            const highPassFilter = audioContext.createBiquadFilter()
-            highPassFilter.type = 'highpass'
-            highPassFilter.frequency.value = 100  // Cut frequencies below 100Hz
-            highPassFilter.Q.value = 0.7
-            
-            // Low-pass filter to remove high-frequency hiss
-            const lowPassFilter = audioContext.createBiquadFilter()
-            lowPassFilter.type = 'lowpass'
-            lowPassFilter.frequency.value = 8000  // Cut frequencies above 8kHz
-            lowPassFilter.Q.value = 0.7
-            
-            // Compressor to normalize volume and reduce sudden loud noises
-            const compressor = audioContext.createDynamicsCompressor()
-            compressor.threshold.value = -30
-            compressor.knee.value = 20
-            compressor.ratio.value = 8
-            compressor.attack.value = 0.003
-            compressor.release.value = 0.25
-            
-            // Gate to cut audio below threshold (removes quiet background noise)
-            const gateGain = audioContext.createGain()
-            gateGain.gain.value = 1.0
-            
-            // Connect the audio processing chain
-            source.connect(highPassFilter)
-            highPassFilter.connect(lowPassFilter)
-            lowPassFilter.connect(compressor)
-            compressor.connect(gateGain)
-            
-            // Create processed stream for WebRTC
-            const destination = audioContext.createMediaStreamDestination()
-            gateGain.connect(destination)
-            
-            const processedStream = destination.stream
-            audioContextRef.current = audioContext
 
             // 3. Create RTCPeerConnection
             const pc = new RTCPeerConnection()
@@ -376,17 +463,14 @@ function VoiceInterface({ channel, userId, onResponse }) {
             pc.ontrack = (e) => {
                 console.log('Got remote audio track', e.streams[0])
                 audioEl.srcObject = e.streams[0]
-                // Set audio properties for smoother playback
-                audioEl.volume = 1.0
-                audioEl.playbackRate = 1.0
                 audioEl.play().catch(err => {
                     console.warn('Audio autoplay blocked, will retry on next interaction:', err)
                 })
             }
 
-            // 5. Add processed microphone track (with noise filtering)
-            processedStream.getTracks().forEach(track => {
-                pc.addTrack(track, processedStream)
+            // 5. Add microphone track directly (browser handles echo/noise cancellation natively)
+            stream.getTracks().forEach(track => {
+                pc.addTrack(track, stream)
             })
 
             // 6. Create data channel for events
@@ -397,6 +481,7 @@ function VoiceInterface({ channel, userId, onResponse }) {
                 console.log('Data channel open — session active')
                 setStatus('listening')
                 connectedRef.current = true
+                onConnectedChange?.(true)
                 setIsMicOn(true)
 
                 // Force a greeting message by simulating a user saying "Hello"
@@ -466,11 +551,17 @@ function VoiceInterface({ channel, userId, onResponse }) {
      */
     const disconnect = useCallback(() => {
         connectedRef.current = false
+        onConnectedChange?.(false)
         setIsMicOn(false)
         setStatus('disconnected')
         resetSilenceTimer()
-        stopMusic() // Ensure hold music stops on disconnect
+        clearFillerTimer()
         nudgeCountRef.current = 0
+        isFillerPhaseRef.current = false
+        toolCallPendingRef.current = false
+        followUpCountRef.current = 0
+        pendingToolNameRef.current = null
+        pendingToolResultRef.current = null
 
         if (dcRef.current) {
             dcRef.current.close()
@@ -493,10 +584,10 @@ function VoiceInterface({ channel, userId, onResponse }) {
         }
 
         if (audioElRef.current) {
+            audioElRef.current.pause()
             audioElRef.current.srcObject = null
-            // Do NOT remove from DOM, it's rendered by React
         }
-    }, [resetSilenceTimer, stopMusic])
+    }, [resetSilenceTimer, clearFillerTimer])
 
     /**
      * Toggle the microphone on/off.
@@ -518,82 +609,19 @@ function VoiceInterface({ channel, userId, onResponse }) {
         }
     }, [connect])
 
+    // Expose imperative API to parent
+    useEffect(() => {
+        if (imperativeRef) {
+            imperativeRef.current = { connect, disconnect, toggleMic }
+        }
+    }, [imperativeRef, connect, disconnect, toggleMic])
+
     // Cleanup on unmount
     useEffect(() => {
         return () => disconnect()
     }, [disconnect])
 
-    const statusText = {
-        disconnected: 'Click the mic to start',
-        connecting: 'Connecting...',
-        connected: 'Connected — ready',
-        listening: 'Listening...',
-        processing: 'Thinking...',
-        speaking: 'Speaking...',
-        error: error || 'Something went wrong',
-    }
-
-    return (
-        <div className="flex flex-col items-center justify-center gap-8 p-6 min-h-[500px]">
-            {/* Orb */}
-            <div className="relative w-40 h-40">
-                <Orb
-                    colorsRef={orbColorsRef}
-                    agentState={status === 'speaking' ? 'speaking' : status === 'listening' ? 'listening' : null}
-                    className="w-full h-full"
-                />
-            </div>
-
-            {/* Title */}
-            <div className="text-center max-w-md">
-                <h2 className="text-2xl font-semibold text-gray-200 mb-1">
-                    {channel === 'telephonic' ? 'Phone Support' : 'Voice Assistant'}
-                </h2>
-                <p className={`text-sm ${status === 'error' ? 'text-red-400' : 'text-gray-400'}`}>
-                    {statusText[status]}
-                </p>
-            </div>
-
-            {/* Controls */}
-            <div className="flex items-center gap-4">
-                {/* Mic Button */}
-                <button
-                    onClick={toggleMic}
-                    disabled={status === 'connecting'}
-                    className={`w-16 h-16 flex items-center justify-center rounded-full transition-all duration-300 shadow-lg
-                        ${isMicOn
-                            ? 'bg-gradient-to-br from-green-500 to-emerald-600 shadow-green-500/30 hover:shadow-green-500/50 hover:scale-105'
-                            : 'bg-gradient-to-br from-gray-600 to-gray-700 shadow-gray-500/20 hover:shadow-gray-500/40 hover:scale-105'
-                        }
-                        ${status === 'connecting' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-                    `}
-                    title={isMicOn ? 'Mute microphone' : 'Start voice session'}
-                >
-                    {status === 'connecting' ? (
-                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : isMicOn ? (
-                        <Mic size={28} className="text-white" />
-                    ) : (
-                        <MicOff size={28} className="text-white" />
-                    )}
-                </button>
-
-                {/* Disconnect Button (only when connected) */}
-                {connectedRef.current && (
-                    <button
-                        onClick={disconnect}
-                        className="w-14 h-14 flex items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-red-600 shadow-lg shadow-red-500/30 hover:shadow-red-500/50 hover:scale-105 transition-all duration-300"
-                        title="End voice session"
-                    >
-                        <PhoneOff size={24} className="text-white" />
-                    </button>
-                )}
-            </div>
-
-            {/* Hidden Audio Element for WebRTC */}
-            <audio ref={audioElRef} autoPlay style={{ display: 'none' }} />
-        </div>
-    )
+    return <audio ref={audioElRef} autoPlay playsInline style={{ display: 'none' }} />
 }
 
 export default VoiceInterface

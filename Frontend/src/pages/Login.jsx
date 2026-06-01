@@ -33,7 +33,8 @@ function Login() {
                     setMessage({ type: 'success', text: 'Login successful! Welcome back.' })
                     // Store user info in localStorage
                     localStorage.setItem('user', JSON.stringify(result.data))
-                    setTimeout(() => navigate('/dashboard'), 1500)
+                    const sessionId = `session_${Date.now()}`
+                    setTimeout(() => navigate(`/dashboard/${sessionId}`), 1500)
                 }
             } else {
                 // Register logic
