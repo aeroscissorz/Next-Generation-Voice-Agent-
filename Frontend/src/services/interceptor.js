@@ -8,7 +8,7 @@
  * Gemini call is needed.
  */
 
-import { sendChatMessage } from '../api/chatApi'
+import { sendChatMessage, sendChatMessageStream } from '../api/chatApi'
 
 /**
  * Process message through interceptor layer
@@ -46,4 +46,31 @@ export async function processMessage(channel, input, userId, callbacks = {}, use
     rawData: response.raw_reply || formattedReply,
     handledBy: 'backend'
   }
+}
+
+/**
+ * Process message with streaming response
+ * @param {string} channel - 'chat' | 'voice' | 'telephonic'
+ * @param {Object} input - Input data (text for chat)
+ * @param {string} userId - User identifier
+ * @param {function} onChunk - Callback for each text chunk
+ * @param {function} onDone - Callback when streaming is complete
+ * @param {string} userName - Optional user name for personalization
+ * @returns {Promise<void>}
+ */
+export async function processMessageStream(channel, input, userId, onChunk, onDone, userName = null, onStatus = null) {
+  if (channel !== 'chat') {
+    throw new Error('Streaming only supported for chat channel')
+  }
+
+  const text = input.text
+
+  await sendChatMessageStream(
+    text,
+    userId,
+    { name: userName },
+    onChunk,
+    onDone,
+    onStatus
+  )
 }

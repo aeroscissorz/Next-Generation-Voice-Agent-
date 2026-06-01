@@ -1,0 +1,83 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Bug Condition** — Promise-to-Pay Extension Requests Bypass Overdue Flow
+  - **CRITICAL**: This test MUST FAIL on unfixed code — failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior — it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate the bug exists in the "Bill overdue flow" section of `UNIFIED_INSTRUCTION`
+  - **Scoped PBT Approach**: Generate extension request phrases (absolute dates like "move my promise date to March 8" and relative requests like "can I get one more day?") and assert the instruction text contains the necessary conditional branch and extension sub-flow
+  - Parse the "Bill overdue flow" section from `Backend/instructions.py` `UNIFIED_INSTRUCTION`
+  - Assert the flow contains a conditional check for existing `promise_date` before proceeding to step 2 (overdue-consequences)
+  - Assert the flow contains a PROMISE DATE EXTENSION sub-flow with steps for `get_promise_date`, date calculation (absolute and relative), user confirmation, and `set_promise_date`
+  - Assert the flow contains extension-detection phrases (e.g., "extend", "move my date", "push it back", "one more day")
+  - Assert the flow contains a guard against re-showing consequences when an existing promise date is detected and the user is requesting an extension
+  - Create test file at `Backend/tests/test_promise_date_extension_bug.py`
+  - Run test on UNFIXED code
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct — it proves the bug exists: no extension branch, no sub-flow, no detection phrases)
+  - Document counterexamples found to understand root cause
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 1.1, 1.2, 1.3_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** — First-Time Overdue Flow, Payment Flow, Eligibility, and Error Handling Unchanged
+  - **IMPORTANT**: Follow observation-first methodology
+  - **IMPORTANT**: Write and run these tests BEFORE implementing the fix
+  - Observe on UNFIXED code: the "Bill overdue flow" section contains the full consequences sequence (late fees, service disconnection, account standing) for first-time overdue interactions
+  - Observe on UNFIXED code: the flow contains `is_eligible_promise_to_pay` eligibility check and denial path
+  - Observe on UNFIXED code: the flow contains `set_promise_date` error handling that relays the max date from the tool error
+  - Observe on UNFIXED code: the "MAKE A PAYMENT FLOW" section and "Bill overdue flow" section both exist with their key elements intact
+  - Write property-based tests that assert:
+    - The "Bill overdue flow" still contains the three consequences (late fees, service disconnection, account standing) for first-time overdue interactions
+    - The flow still contains `is_eligible_promise_to_pay` eligibility check with a denial path for ineligible users
+    - The flow still contains `set_promise_date` error handling that relays the max allowed date
+    - The "MAKE A PAYMENT FLOW" section still exists with `make_payment` and "Credit Card ending in 5566"
+    - The flow still contains "Do NOT mention extension" and "Promise to Pay" naming instructions
+    - The existing step sequence (step 1 → step 2 → step 3 → step 4) is preserved for non-extension cases
+  - Create test file at `Backend/tests/test_promise_date_extension_preservation.py`
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4_
+
+- [x] 3. Fix for promise-to-pay date extension handling
+
+  - [x] 3.1 Implement the fix in `Backend/instructions.py`
+    - Add an early conditional branch after step 1 in the "Bill overdue flow" section: if the user already has a `promise_date` set on the invoice AND the user's message is asking to extend/change/move that date, go to the PROMISE DATE EXTENSION sub-flow instead of step 2
+    - Add a PROMISE DATE EXTENSION sub-flow within the "Bill overdue flow" section with steps:
+      - E1: Call `get_promise_date(user_id, invoice_id)` to retrieve the current promise date
+      - E2: Determine the new target date — use absolute date directly if given, or add requested days to current promise date for relative requests
+      - E3: Confirm the new date with the user before calling the tool: "I can move your Promise to Pay date from [current date] to [new date]. Shall I go ahead?"
+      - E4: On confirmation, call `set_promise_date(user_id, invoice_id, new_date)`
+      - E5: If tool succeeds, confirm the new date to the user
+      - E6: If tool returns error (date exceeds 7-day window), relay the max date from the error and ask user to pick a new date
+    - Add extension-detection guidance with example phrases: "extend my promise date", "move my date to", "push it back", "one more day", "can I get an extension", "change my promise date"
+    - Add explicit guard: when existing promise date is detected and user is requesting extension, do NOT repeat overdue-consequences summary or ask "would you like to pay now?"
+    - Add note: if user has a promise date but is NOT asking to change it (e.g., "what's my promise date?" or "I want to pay now"), existing flow steps still apply
+    - _Bug_Condition: isBugCondition(input) where userHasExistingPromiseDate AND userIsRequestingDateChange_
+    - _Expected_Behavior: Agent retrieves current promise date, determines new date (absolute or relative), confirms with user, calls set_promise_date, and confirms result — without repeating overdue-consequences flow_
+    - _Preservation: First-time overdue flow, payment flow, eligibility checks, error handling, and all non-overdue flows remain unchanged_
+    - _Requirements: 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4_
+
+  - [x] 3.2 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** — Promise-to-Pay Extension Requests Bypass Overdue Flow
+    - **IMPORTANT**: Re-run the SAME test from task 1 — do NOT write a new test
+    - The test from task 1 encodes the expected behavior (extension branch, sub-flow, detection phrases)
+    - When this test passes, it confirms the expected behavior is satisfied
+    - Run `Backend/tests/test_promise_date_extension_bug.py`
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
+    - _Requirements: 2.1, 2.2, 2.3_
+
+  - [x] 3.3 Verify preservation tests still pass
+    - **Property 2: Preservation** — First-Time Overdue Flow, Payment Flow, Eligibility, and Error Handling Unchanged
+    - **IMPORTANT**: Re-run the SAME tests from task 2 — do NOT write new tests
+    - Run `Backend/tests/test_promise_date_extension_preservation.py`
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm all tests still pass after fix (no regressions)
+
+- [x] 4. Checkpoint — Ensure all tests pass
+  - Run all tests in `Backend/tests/` to ensure nothing is broken
+  - Ensure `test_promise_date_extension_bug.py` passes (bug is fixed)
+  - Ensure `test_promise_date_extension_preservation.py` passes (no regressions)
+  - Ensure existing tests (`test_outage_refund_confirmation.py`, `test_outage_refund_preservation.py`) still pass
+  - Ask the user if questions arise
